@@ -35,10 +35,22 @@ class HttpsTransport implements IncusTransport {
     HttpsTransport(String baseUrl, SSLContext sslContext) {
         this.baseUrl   = baseUrl.replaceAll("/$", "");
         this.wsBaseUrl = this.baseUrl.replace("https://", "wss://");
-        this.httpClient = HttpClient.newBuilder()
-                .sslContext(sslContext)
-                .version(HttpClient.Version.HTTP_1_1)
-                .build();
+        // Incus self-signed certs typically don't include the VM's DHCP IP in
+        // their SANs, so hostname verification must be disabled.
+        System.setProperty("jdk.internal.httpclient.disableHostnameVerification", "true");
+        // Short keep-alive avoids stale connections causing 5-10s timeouts
+        // when the server closes idle connections before the client detects it.
+        System.setProperty("jdk.httpclient.keepalive.timeout", "2");
+        try {
+            this.httpClient = HttpClient.newBuilder()
+                    .sslContext(sslContext)
+                    .connectTimeout(java.time.Duration.ofSeconds(5))
+                    .version(HttpClient.Version.HTTP_1_1)
+                    .build();
+        } finally {
+            System.clearProperty("jdk.internal.httpclient.disableHostnameVerification");
+            System.clearProperty("jdk.httpclient.keepalive.timeout");
+        }
     }
 
     /**
@@ -272,7 +284,8 @@ class HttpsTransport implements IncusTransport {
 
         @Override
         public void close() {
-            try { ws.sendClose(WebSocket.NORMAL_CLOSURE, ""); } catch (Exception ignored) {}
+            try { ws.sendClose(WebSocket.NORMAL_CLOSURE, "").join(); } catch (Exception ignored) {}
+            ws.abort();
         }
     }
 }

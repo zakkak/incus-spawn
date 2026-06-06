@@ -178,6 +178,8 @@ public class InitCommand extends BaseCommand {
             MitmProxy.configureBridgeDns(incus);
         }
 
+        offerMacOsServices();
+
         System.out.println("\n=== Init complete! ===");
         System.out.println("Next steps:");
         System.out.println("  1. Build a template:  isx build tpl-java");

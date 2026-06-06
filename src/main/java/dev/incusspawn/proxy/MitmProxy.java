@@ -278,7 +278,12 @@ public class MitmProxy {
     /** Clear bridge-level DNS overrides, restoring normal DNS resolution. */
     public static void clearBridgeDns(IncusClient incus) {
         try {
-            incus.networkConfigSet("incusbr0", "raw.dnsmasq", "");
+            // Only remove address= overrides, preserve server= forwarders
+            var existing = incus.networkConfigGet("incusbr0", "raw.dnsmasq");
+            var servers = existing.lines()
+                    .filter(l -> l.startsWith("server="))
+                    .collect(java.util.stream.Collectors.joining("\n"));
+            incus.networkConfigSet("incusbr0", "raw.dnsmasq", servers);
         } catch (Exception e) {
             System.err.println("Warning: could not clear bridge DNS overrides: " + e.getMessage());
         }

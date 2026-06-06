@@ -707,10 +707,10 @@ public class BuildCommand extends BaseCommand {
         System.out.println("Creating agentuser...");
         container.exec("useradd", "-m", "-u", "1000", "-G", "systemd-journal", "agentuser")
                 .assertSuccess("Failed to create agentuser");
+        container.exec("chown", "-R", "agentuser:agentuser", "/home/agentuser")
+                .assertSuccess("Failed to set home directory ownership");
         container.exec("mkdir", "-p", "/home/agentuser/inbox")
                 .assertSuccess("Failed to create inbox directory");
-        container.exec("chown", "agentuser:agentuser", "/home/agentuser/inbox")
-                .assertSuccess("Failed to set inbox ownership");
         container.sh(
                 "echo 'agentuser ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/agentuser")
                 .assertSuccess("Failed to configure passwordless sudo");

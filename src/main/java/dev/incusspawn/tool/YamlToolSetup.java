@@ -72,8 +72,8 @@ public class YamlToolSetup implements ToolSetup {
         // 2. Shell commands as root (with parameter substitution)
         for (var script : def.getRun()) {
             var substituted = ParameterSubstitutor.substitute(script, resolvedParams);
-            container.runInteractive("Failed to run setup for " + def.getName(),
-                    "sh", "-c", substituted);
+            container.sh(substituted)
+                    .assertSuccess("Failed to run setup for " + def.getName());
         }
 
         // 3. Shell commands as agentuser (with parameter substitution)

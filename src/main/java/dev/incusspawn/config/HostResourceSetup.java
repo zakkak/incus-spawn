@@ -111,6 +111,13 @@ public final class HostResourceSetup {
                 case "copy" -> applyCopy(container, hr);
                 case "readonly" -> applyReadonly(incus, container.name(), hr);
                 case "overlay" -> {
+                    if (Environment.isMacOS()) {
+                        throw new IllegalStateException(
+                                "Host-resource '" + hr.getSource() + "' uses overlay mode, which is not yet supported on macOS.\n"
+                                + "  Change the mode to 'readonly' in your image definition to mount it read-only,\n"
+                                + "  or remove the host-resource entry to skip it entirely.\n"
+                                + "  Tracking: https://github.com/Sanne/incus-spawn/issues/157");
+                    }
                     applyOverlay(incus, container, hr);
                     overlayEntries.add(hr);
                 }
@@ -148,6 +155,13 @@ public final class HostResourceSetup {
                     applyReadonly(incus, container, hr);
                 }
                 case "overlay" -> {
+                    if (Environment.isMacOS()) {
+                        throw new IllegalStateException(
+                                "Host-resource '" + hr.getSource() + "' uses overlay mode, which is not yet supported on macOS.\n"
+                                + "  Change the mode to 'readonly' in your image definition to mount it read-only,\n"
+                                + "  or remove the host-resource entry to skip it entirely.\n"
+                                + "  Tracking: https://github.com/Sanne/incus-spawn/issues/157");
+                    }
                     removeExistingDevice(incus, container, deviceNameForMode(hr));
                     applyOverlayDevice(incus, container, hr);
                 }
@@ -272,7 +286,7 @@ public final class HostResourceSetup {
         container.exec("chown", "agentuser:agentuser", upperDir);
         chownHomeParents(container, containerPath);
         container.exec("mount", "-t", "overlay", "overlay",
-                "-o", "lowerdir=" + lowerDir + ",upperdir=" + upperDir + ",workdir=" + workDir,
+                "-o", "lowerdir=" + lowerDir + ",upperdir=" + upperDir + ",workdir=" + workDir + ",metacopy=off",
                 containerPath);
 
         System.out.println("  Mounted " + hr.getSource() + " -> " + containerPath + " (overlay)");
@@ -328,7 +342,7 @@ public final class HostResourceSetup {
                 "    [ -d \"$lower\" ] || continue\n" +
                 "    mkdir -p \"$upper\" \"$work\" \"$target\"\n" +
                 "    chown agentuser:agentuser \"$upper\"\n" +
-                "    mount -t overlay overlay -o \"lowerdir=$lower,upperdir=$upper,workdir=$work\" \"$target\"\n" +
+                "    mount -t overlay overlay -o \"lowerdir=$lower,upperdir=$upper,workdir=$work,metacopy=off\" \"$target\"\n" +
                 "done < " + OVERLAY_CONF);
         container.exec("chmod", "+x", OVERLAY_SCRIPT);
 

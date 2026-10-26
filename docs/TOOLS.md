@@ -25,6 +25,7 @@ These tools ship with isx; a template's `tools:` list names them.
 | `sshd` | OpenSSH server for remote access |
 | `idea-backend` | JetBrains IntelliJ IDEA Remote Development backend |
 | `vscode-remote` | VS Code Remote Development via SSH |
+| `orca` | What the [Orca](ORCA.md) agent orchestrator needs to run its agents in the instance |
 | `starship` | Starship cross-shell prompt with incus-spawn indicator |
 | `tmux` | Terminal multiplexer with incus-spawn session integration |
 | `zmx` | zmx: session attach/detach for the terminal |

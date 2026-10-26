@@ -10,15 +10,16 @@ It branches an instance from a template you prepared, and tells Orca how to reac
 
 ## Setting it up
 
-Setting it up takes a template with an SSH server and an agent, and four lines in your repository's `orca.yaml`.
+Setting it up takes a template with the `orca` tool and an agent, and four lines in your repository's `orca.yaml`.
 
-1. Define a template with the `sshd` tool and the agent you run in Orca.
+1. Define a template with the `orca` tool and the agent you run in Orca.
+   The `orca` tool brings the SSH server Orca connects through, and the commands its server needs in the instance.
    Listing your repository under `repos` is optional, and makes each workspace start from the template's clone instead of a fresh one.
 
    ```yaml
    name: tpl-app
    parent: tpl-java
-   tools: [sshd, claude]
+   tools: [orca, claude]
    repos:
      - url: https://github.com/acme/app.git
        path: ~/app
@@ -56,6 +57,9 @@ Orca lists a recipe only once `orca.yaml` holding it is on the repository's main
 
 Orca then installs its own server in the instance over SSH, and runs its terminals and agents there.
 Agents started in Orca's terminals get the instance's login environment, so the isx proxy signs them in to their accounts.
+
+Orca's server needs `tar` and `awk` in the instance, which the `orca` tool installs.
+`isx orca create` warns when the template lacks the tool, and refuses a template with no SSH server.
 
 ## The checkout
 

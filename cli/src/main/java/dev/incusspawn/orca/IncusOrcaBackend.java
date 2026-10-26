@@ -67,7 +67,8 @@ public final class IncusOrcaBackend implements OrcaBackend {
                 config.pathText(Metadata.BUILD_SOURCE, ""));
         var resolver = new ActionResolver(incus, RuntimeServices.toolDefLoader(), RuntimeServices.toolSetups(),
                 preflight.defs());
-        return new Source(ssh, resolver.collectRepos(preflight.sourceInstance(), preflight.template()), preflight);
+        return new Source(ssh, resolver.collectInstalledTools(preflight.sourceInstance(), preflight.template()),
+                resolver.collectRepos(preflight.sourceInstance(), preflight.template()), preflight);
     }
 
     @Override

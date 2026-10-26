@@ -49,6 +49,7 @@ public class ToolDefLoader {
             "sshd.yaml",
             "idea-backend.yaml",
             "vscode-remote.yaml",
+            "orca.yaml",
             "starship.yaml",
             "tmux.yaml",
             "typesafe.yaml",

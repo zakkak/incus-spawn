@@ -4,6 +4,7 @@ paths:
   - cli/src/test/java/dev/incusspawn/orca/**
   - cli/src/main/java/dev/incusspawn/command/OrcaCommand.java
   - docs/ORCA.md
+  - common/src/main/resources/tools/orca.yaml
 ---
 
 # Orca environment recipes (`isx orca`)
@@ -23,6 +24,8 @@ Layout:
 - `OrcaCheckout`: where the checkout lives in the instance and the script that prepares it.
 - `OrcaRuntime`: the four flows on an `OrcaBackend`; `OrcaRuntimeTest` drives them with a fake.
 - `IncusOrcaBackend`: the real backend, through `BranchFlow`, `InstancePrep.prepare` and `InstanceDestroyer`, under the instance lock manager.
+- `tools/orca.yaml`: the built-in `orca` tool, `sshd` plus the packages Orca's server needs in the instance (`tar`, `gawk`).
+  A command Orca's remote install starts to use that `tpl-minimal` lacks belongs in it; the symptom is a first connect, or one after a resume, that fails with `command not found` in Orca's log.
 
 Rules:
 - Stdout is the protocol: `OrcaCommand` installs `StdioGuard` first, and writes only the result to `guard.protocolOut`.

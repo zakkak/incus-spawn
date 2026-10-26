@@ -50,7 +50,7 @@ class JjqYamlParityTest {
     @Test
     void builtinToolsBind() throws Exception {
         var toolFiles = List.of("headroom.yaml", "perf.yaml", "podman.yaml", "maven-3.yaml",
-                "mvnd.yaml", "sshd.yaml", "idea-backend.yaml", "vscode-remote.yaml",
+                "mvnd.yaml", "sshd.yaml", "idea-backend.yaml", "vscode-remote.yaml", "orca.yaml",
                 "starship.yaml", "tmux.yaml", "typesafe.yaml", "zmx.yaml");
         for (var file : toolFiles) {
             var yaml = resource("tools/" + file);

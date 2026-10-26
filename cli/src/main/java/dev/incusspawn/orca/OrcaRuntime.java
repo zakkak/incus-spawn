@@ -18,6 +18,9 @@ import java.util.Map;
  */
 public final class OrcaRuntime {
 
+    /** The built-in tool that gives an instance what Orca's server needs ({@code tools/orca.yaml}). */
+    static final String TOOL = "orca";
+
     private final OrcaBackend backend;
 
     public OrcaRuntime(OrcaBackend backend) {
@@ -52,7 +55,11 @@ public final class OrcaRuntime {
             var source = backend.preflight(request);
             if (!source.ssh()) {
                 throw new OrcaRecipe.RecipeException("'" + options.template() + "' has no SSH server, which Orca"
-                        + " connects through: add the sshd tool to it and rebuild it.");
+                        + " connects through: add the " + TOOL + " tool to it, which brings sshd, and rebuild it.");
+            }
+            if (!source.tools().contains(TOOL)) {
+                BuildOutput.warn("'" + options.template() + "' was not built with the " + TOOL + " tool. Orca's server"
+                        + " needs tar and awk in the instance, which it installs.");
             }
             var remote = context.provisionedRoot() ? context.repoUrl() : backend.hostRemote(context.repoPath());
             var checkout = OrcaCheckout.plan(options.projectRoot(), remote, source.repos());

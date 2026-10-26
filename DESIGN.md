@@ -3706,6 +3706,11 @@ Orca then dials the target, deploys its own server (`orcad`, with a pinned Node)
 - *A failed create deletes its branch.*
   Orca runs `destroy` only for a result it parsed, so an instance left by a `create` that failed after the copy (a clone refused, a start that failed) would be orphaned.
   `OrcaRuntime.create` runs every refusal it can before the copy (preflight, `sshd` in the source's build, a remote it can clone), and deletes the branch, by the same stamp check, on any failure after it.
+- *The `orca` tool: what Orca's server needs in the instance.*
+  Orca's first connect uploads a pinned Node and its server (`orcad`) and unpacks the Node archive with `tar -xzf`; after a restart it checks the installed server's hash with `sha256sum ... | awk`.
+  `tpl-minimal` has neither, so the first connect failed with `tar: command not found`, and a resumed workspace with "Could not verify the installed orcad build hash" (found running Orca's own workspace flow against a real Incus).
+  The built-in `orca` tool requires `sshd` and installs `tar` and `gawk`; `node-pty` needs no compiler, since `orcad` ships prebuilt slots for glibc.
+  `create` refuses a source without SSH and only warns about a missing `orca` tool, since a template may install the two packages itself.
 - *Names are stable per runtime.*
   The instance is `orca-<workspace slug>-<6 hex of sha256(runtime id)>`: two workspaces of one name differ, and a create Orca repeats for one runtime asks for the name it already has, which preflight refuses rather than making a second instance.
 - *Agents get their credentials as in any isx shell.*

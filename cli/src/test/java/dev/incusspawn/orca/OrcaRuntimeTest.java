@@ -3,6 +3,8 @@ package dev.incusspawn.orca;
 import dev.incusspawn.incus.Metadata;
 import dev.incusspawn.lifecycle.BranchFlow;
 import dev.incusspawn.tool.ActionContext;
+import dev.incusspawn.util.BuildOutput;
+import dev.incusspawn.util.Output;
 import io.hyperfoil.tools.jjq.value.JqValues;
 import org.junit.jupiter.api.Test;
 
@@ -12,6 +14,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -56,9 +59,21 @@ class OrcaRuntimeTest {
     void aTemplateWithoutSshdIsRefusedBeforeAnythingIsCreated() {
         backend.ssh = false;
         var e = assertThrows(OrcaRecipe.RecipeException.class, () -> runtime.create(CONTEXT, FROM_TEMPLATE));
-        assertTrue(e.getMessage().contains("sshd"), e.getMessage());
+        assertTrue(e.getMessage().contains("orca tool"), e.getMessage());
         assertFalse(backend.calls.contains("create"));
         assertEquals("release tpl-dev", backend.calls.getLast());
+    }
+
+    @Test
+    void aTemplateWithSshdButNotTheOrcaToolIsBranchedWithAWarning() {
+        backend.tools = Set.of("sshd");
+        var warnings = new ArrayList<String>();
+        try (var bound = BuildOutput.bind(Output.diagnosticsTo(warnings::add))) {
+            runtime.create(CONTEXT, FROM_TEMPLATE);
+        }
+        assertTrue(backend.calls.contains("create"));
+        assertEquals(1, warnings.size(), warnings.toString());
+        assertTrue(warnings.getFirst().contains("orca tool"), warnings.getFirst());
     }
 
     @Test
@@ -141,6 +156,7 @@ class OrcaRuntimeTest {
         final List<String> scripts = new ArrayList<>();
         final Map<String, Map<String, String>> instances = new HashMap<>();
         boolean ssh = true;
+        Set<String> tools = Set.of("orca", "sshd");
         String remote = "git@github.com:acme/app.git";
         int exit = 0;
 
@@ -161,7 +177,7 @@ class OrcaRuntimeTest {
         public Source preflight(BranchFlow.Request request) {
             calls.add("preflight");
             requests.add(request);
-            return new Source(ssh, List.of(new ActionContext.RepoInfo("other", "/home/agentuser/other",
+            return new Source(ssh, tools, List.of(new ActionContext.RepoInfo("other", "/home/agentuser/other",
                     "https://github.com/acme/other")), null);
         }
 

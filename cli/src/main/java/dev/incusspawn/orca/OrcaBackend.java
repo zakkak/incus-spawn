@@ -6,6 +6,7 @@ import dev.incusspawn.tool.ActionContext;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Predicate;
 
 /** What {@code isx orca} needs from Incus and the host: {@link IncusOrcaBackend}, or a fake in tests. */
@@ -19,10 +20,12 @@ public interface OrcaBackend {
      * with nothing created, when the branch could not be made.
      *
      * @param ssh   whether it was built with an SSH server, which Orca connects through
+     * @param tools the tools it was built with
      * @param repos the repositories it was built with
      * @param preflight what {@link #create} branches; null in a fake
      */
-    record Source(boolean ssh, List<ActionContext.RepoInfo> repos, BranchFlow.Preflight preflight) {}
+    record Source(boolean ssh, Set<String> tools, List<ActionContext.RepoInfo> repos,
+                  BranchFlow.Preflight preflight) {}
 
     /** A hold released by closing it, which cannot fail. */
     interface Hold extends AutoCloseable {

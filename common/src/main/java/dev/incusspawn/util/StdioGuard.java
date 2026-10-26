@@ -1,8 +1,4 @@
-package dev.incusspawn.mcp;
-
-import dev.incusspawn.util.BuildOutput;
-import dev.incusspawn.util.Headless;
-import dev.incusspawn.util.TerminalOutput;
+package dev.incusspawn.util;
 
 import java.io.FileDescriptor;
 import java.io.FileInputStream;
@@ -15,23 +11,24 @@ import java.io.PrintStream;
  * Hands the real stdin and stdout to the protocol, and everything else to stderr.
  *
  * <p>Much of isx prints progress to {@code System.out} ({@code BuildOutput}, lifecycle steps,
- * proxy warnings). Under {@code isx mcp} stdout is the protocol channel, so one stray line would
- * corrupt it. Rather than teach every helper about MCP, {@code System.out} becomes stderr -- which
- * the MCP client logs -- and {@code System.in} becomes empty, so nothing but the transport can
- * consume the client's messages. isx's own messages are bound to stderr outright
+ * proxy warnings). Under {@code isx mcp} stdout is the protocol channel, and under {@code isx orca}
+ * it holds the one JSON object Orca parses, so one stray line would corrupt either. Rather than
+ * teach every helper about them, {@code System.out} becomes stderr -- which the MCP client and
+ * Orca log -- and {@code System.in} becomes empty, so nothing but the protocol can consume the
+ * caller's input. isx's own messages are bound to stderr outright
  * ({@link TerminalOutput#stderrOnly}), and {@link Headless} stops animations and prompts.
  */
-final class StdioGuard {
+public final class StdioGuard {
 
-    final InputStream protocolIn;
-    final OutputStream protocolOut;
+    public final InputStream protocolIn;
+    public final OutputStream protocolOut;
 
     private StdioGuard(InputStream in, OutputStream out) {
         this.protocolIn = in;
         this.protocolOut = out;
     }
 
-    static StdioGuard install() {
+    public static StdioGuard install() {
         var guard = new StdioGuard(new FileInputStream(FileDescriptor.in),
                 new FileOutputStream(FileDescriptor.out));
         System.setOut(new PrintStream(new FileOutputStream(FileDescriptor.err), true));

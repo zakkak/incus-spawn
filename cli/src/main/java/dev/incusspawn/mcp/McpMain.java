@@ -5,6 +5,7 @@ import dev.incusspawn.RuntimeServices;
 import dev.incusspawn.config.McpConfig;
 import dev.incusspawn.config.SpawnConfig;
 import dev.incusspawn.incus.Metadata;
+import dev.incusspawn.util.StdioGuard;
 
 import java.nio.file.Path;
 import java.time.Instant;

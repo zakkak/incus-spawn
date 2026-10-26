@@ -50,7 +50,7 @@ class RawOutputGateTest {
     /** Repository-relative paths of the gate classes, each with why it may write. */
     private static final Map<String, String> EXEMPT = Map.of(
             "common/src/main/java/dev/incusspawn/util/TerminalOutput.java", "the terminal printer",
-            "cli/src/main/java/dev/incusspawn/mcp/StdioGuard.java", "moves stdout off the MCP protocol stream",
+            "common/src/main/java/dev/incusspawn/util/StdioGuard.java", "moves stdout off the MCP and Orca protocol streams",
             "cli/src/main/java/dev/incusspawn/command/Prompts.java", "owns the console",
             "common/src/main/java/dev/incusspawn/proxy/ProxyLog.java", "the proxy's log, silent while the TUI draws");
 

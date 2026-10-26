@@ -23,6 +23,9 @@ Layout:
 - `OrcaRecipe`: the contract (context from the environment, instance name, guest clone URL, result, payload).
 - `OrcaCheckout`: where the checkout lives in the instance and the script that prepares it.
 - `OrcaRuntime`: the four flows on an `OrcaBackend`; `OrcaRuntimeTest` drives them with a fake.
+- `OrcaPlugin`: the Orca plugin `isx orca plugin` writes, Orca's manifest (`src/shared/plugins/plugin-manifest.ts`) and one recipe artifact (`plugin-vm-recipe-artifact.ts`), both strict.
+  `OrcaPluginTest` pins their key sets and that writing twice gives the same bytes.
+  Raise `OrcaPlugin.VERSION` with any change to what it writes; never put a host path or the isx version in it, since Orca asks for consent again whenever the files change.
 - `IncusOrcaBackend`: the real backend, through `BranchFlow`, `InstancePrep.prepare` and `InstanceDestroyer`, under the instance lock manager.
 - `tools/orca.yaml`: the built-in `orca` tool, `sshd` plus the packages Orca's server needs in the instance (`tar`, `gawk`).
   A command Orca's remote install starts to use that `tpl-minimal` lacks belongs in it; the symptom is a first connect, or one after a resume, that fails with `command not found` in Orca's log.
@@ -33,3 +36,4 @@ Rules:
 - Lifecycle commands act only on an instance whose `orca-runtime` stamp equals the payload's runtime; `destroy` of a missing instance succeeds.
 - The instance clones over HTTPS only (`OrcaRecipe.guestCloneUrl`): never plain HTTP, a local path, `file://` or a remote helper, and never with user info from the host's remote.
 - `resume` echoes a provisioned root's target from the payload: Orca refuses a resumed root whose SSH fields changed.
+- Without `--from` or an `incus-spawn.yaml`, `create` chooses among templates built with the `orca` tool (`OrcaRuntime.chooseTemplate`), and refuses rather than guesses between several.

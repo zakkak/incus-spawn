@@ -10,7 +10,7 @@ It branches an instance from a template you prepared, and tells Orca how to reac
 
 ## Setting it up
 
-Setting it up takes a template with the `orca` tool and an agent, and four lines in your repository's `orca.yaml`.
+Setting it up takes a template with the `orca` tool and an agent, and the isx plugin for Orca.
 
 1. Define a template with the `orca` tool and the agent you run in Orca.
    The `orca` tool brings the SSH server Orca connects through, and the commands its server needs in the instance.
@@ -26,23 +26,49 @@ Setting it up takes a template with the `orca` tool and an agent, and four lines
    ```
 
 2. Build it with `isx build tpl-app`.
-3. Add a recipe to `orca.yaml` at the root of your repository, on its main branch:
+3. Write the plugin with `isx orca plugin`, which puts it in `~/.config/incus-spawn/orca-plugin`.
+4. In Orca, under Settings, Plugins, turn on the plugin system and install the plugin from that folder.
+   Orca shows the four commands it runs; approve them.
+5. Turn on **Cloud VM** under Settings, Experimental.
+6. Create a workspace and choose **isx sandbox** under **Run on**.
 
-   ```yaml
-   environmentRecipes:
-     - id: isx
-       name: isx sandbox
-       create: isx orca create --from tpl-app
-       suspend: isx orca suspend
-       resume: isx orca resume
-       destroy: isx orca destroy
-   ```
+## The isx plugin for Orca
 
-4. In Orca, turn on **Cloud VM** under Settings, Experimental.
-5. Create a workspace and choose **isx sandbox** under **Run on**.
+The plugin offers **isx sandbox** in every repository you open in Orca, with nothing to add to the repository.
+It holds no code: only Orca's plugin manifest and one recipe, whose four commands are `isx orca create`, `suspend`, `resume` and `destroy`.
+Orca runs them with your login shell's `PATH`, so they find `isx` wherever it is installed.
 
-Orca lists a recipe only once `orca.yaml` holding it is on the repository's main branch.
-`orca vm recipe doctor isx --provision` checks the recipe end to end: it creates an instance, reads the result and destroys the instance again.
+The plugin's files change only when isx changes the recipe.
+Orca asks you to approve a plugin again whenever its files change, so writing it again after an upgrade asks nothing new unless they did.
+It needs Orca 1.4.160 or later.
+
+## Choosing the template
+
+The plugin's recipe is the same for every repository, so `isx orca create` chooses the template, in this order:
+
+1. The template `--from` names.
+2. The template the checkout's `incus-spawn.yaml` names.
+3. Of the templates built with the `orca` tool, the one that clones the repository's remote.
+4. The only template built with the `orca` tool.
+
+With none, or with several and no clone to tell them apart, it refuses and says which templates it found.
+
+## A recipe in the repository instead
+
+A recipe in the repository's `orca.yaml` suits a team that shares it, or a repository that needs other options.
+Orca lists it only once `orca.yaml` is on the repository's main branch, and a recipe named `isx` there takes the plugin's place in that repository.
+
+```yaml
+environmentRecipes:
+  - id: isx
+    name: isx sandbox
+    create: isx orca create --from tpl-app
+    suspend: isx orca suspend
+    resume: isx orca resume
+    destroy: isx orca destroy
+```
+
+`orca vm recipe doctor isx --provision` checks such a recipe end to end: it creates an instance, reads the result and destroys the instance again.
 It runs on your computer and costs nothing.
 
 ## Credentials
@@ -112,7 +138,7 @@ A branch you make of such an instance does not carry the stamp.
 
 | Option | What it does |
 |--------|--------------|
-| `--from <template>` | The template or instance to branch. Default: the one the checkout's `incus-spawn.yaml` names |
+| `--from <template>` | The template or instance to branch. Default: as [Choosing the template](#choosing-the-template) says |
 | `--project-root <path>` | The checkout in the instance Orca opens, absolute or under `~/` |
 | `--account <ns>=<account>` | Use this [credential account](CONFIGURATION.md#credential-accounts); repeatable |
 | `--proxy-only` | Restrict the instance's network to the isx proxy |
@@ -143,4 +169,6 @@ Orca shows the output of `isx orca create` while it creates a workspace, and kee
 | `has no remote isx can clone` | Push the repository, list it in the template's `repos`, or give `--project-root` |
 | `the isx proxy is not running` | Run `isx proxy start`, or `isx doctor` for the cause |
 | `no template or instance '<name>' to branch` | Build the template, or correct `--from` |
+| `no template is built with the orca tool` | Add the `orca` tool to a template and build it |
+| `several templates are built with the orca tool` | Name one in the repository's `incus-spawn.yaml`, or in a recipe of its own `orca.yaml` |
 | `was not created by isx orca for this Orca runtime` | The payload names an instance isx did not make for it, which isx leaves alone; remove it yourself with `isx destroy` if it is yours |

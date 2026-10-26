@@ -3681,8 +3681,19 @@ Orca then dials the target, deploys its own server (`orcad`, with a pinned Node)
 `isx orca create|suspend|resume|destroy` (`OrcaCommand`, `cli/.../orca/`) implements that contract, so a recipe is four one-line commands.
 
 - *Recipes, not an Orca provider.*
-  Orca's execution hosts are a closed union (`local | ssh | runtime`) with no plugin seam; recipes are its documented extension point and need no Orca change.
-  A user-level Orca plugin can also contribute recipes, but plugins install from a git marketplace whose entries name a repository root, so it would need a repository of its own; `orca.yaml` is the documented path for now.
+  Orca's execution hosts are a closed union (`local | ssh | runtime`) with no plugin seam; recipes are its documented extension point and need no Orca change, its docs included: everything a user needs is in docs/ORCA.md.
+- *An Orca plugin, written by isx.*
+  A recipe in `orca.yaml` is committed to the repository and shared with everyone who clones it, isx user or not, and has to be added to each repository.
+  An Orca plugin can contribute recipes to every repository instead (`contributes.vmRecipes`, since Orca 1.4.160), and one that contributes nothing else is content only: no worker, no capabilities (`plugin-manifest.ts`, `plugin-vm-recipe-artifact.ts` there).
+  `isx orca plugin` writes it (`OrcaPlugin`): the manifest, publisher `incus-spawn` (Orca reserves `stablyai` and ids starting `orca-`), and one recipe `isx` whose commands are plain `isx orca ...`, found on the `PATH` Orca takes from the login shell.
+  Orca's consent is bound to a hash of the plugin's files, and any change asks again, so they hold nothing that varies by host or isx release: not the isx version, not its path.
+  `OrcaPlugin.VERSION` moves only with the recipe.
+  The user installs it from its folder (Orca's "local path" install copies it into Orca's own store); a git marketplace would need the plugin at a repository root, so publishing one needs a repository or branch of its own, which is left for later.
+  A repository's own recipe named `isx` shadows the plugin's there, which is how a repository pins its template or options.
+  isx has no plugin system of its own for this to be an isx plugin instead: its extension point is YAML tools, which the `orca` tool is, and the recipe flows need `BranchFlow` and the lock manager.
+- *Choosing the template for a recipe that names none.*
+  The plugin's recipe is one for every repository, so `isx orca create` without `--from` takes the checkout's `incus-spawn.yaml`, as `isx branch` does, then chooses among built templates (`OrcaRuntime.chooseTemplate`, one listing): only those built with the `orca` tool, since no other can serve Orca; the one whose `repos` hold the repository's remote; else the only one.
+  Several and no clone between them is refused with their names rather than guessed, as the choice decides which account and toolchain the agent gets.
 - *isx commands, not shell scripts.*
   A recipe written as scripts would need `start` and `stop`, which the CLI does not have, JSON handling on macOS and Linux alike, and the discipline to keep stdout clean while `BranchFlow` prints progress.
   `StdioGuard` (shared with `isx mcp`) hands fd 1 to the result and points `System.out` at stderr, which Orca shows while it creates the workspace.

@@ -303,6 +303,7 @@ Stdout is the protocol, as for `isx mcp`: both install `StdioGuard`.
 The result's shape is Orca's strict schema (`src/shared/ephemeral-vm-recipes.ts` in stablyai/orca): never add a field Orca does not know, since it fails the whole result; isx's own data rides in `userData`.
 `create` stamps `orca-runtime` on the copy request and the lifecycle commands act only on an instance whose stamp matches the payload's runtime; like the MCP stamps it is an ownership key (`Metadata.isOwnershipKey`) no copy inherits.
 Every refusal runs before the copy; after it, a failure deletes the branch, since Orca destroys only what a result named.
+`isx orca plugin` writes a content-only Orca plugin whose one recipe runs these commands in every repository (`OrcaPlugin`); its files must not vary by host or isx release, since Orca re-asks consent on any change, and `isx orca create` then chooses the template itself (`OrcaRuntime.chooseTemplate`).
 
 **Native image: host paths belong in the run-time-initialized classes.**
 Quarkus initializes application classes at image-build time unless they are listed in `--initialize-at-run-time`, and Linux native builds run as **root inside the GraalVM builder container**.

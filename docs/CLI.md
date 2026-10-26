@@ -573,11 +573,12 @@ The proxy runs it for each connection that instance makes to `https://mcp.isx.in
 ## `isx orca`
 
 The commands of an [Orca](ORCA.md) environment recipe, which give each Orca workspace an isx instance.
-Orca runs them, not you: name them in the repository's `orca.yaml`.
+Orca runs them, not you: `isx orca plugin` writes the plugin that names them, or a repository names them in its `orca.yaml`.
 
 ```shell
-isx orca create --from <template> [options]
+isx orca create [--from <template>] [options]
 isx orca suspend | resume | destroy
+isx orca plugin [--output <dir>]
 ```
 
 | Subcommand | What it does |
@@ -586,6 +587,7 @@ isx orca suspend | resume | destroy
 | `suspend` | Stop the instance the payload on stdin names |
 | `resume` | Start the instance the payload on stdin names, and print its connection again |
 | `destroy` | Delete the instance the payload on stdin names |
+| `plugin` | Write the isx plugin for Orca to `--output`, by default `~/.config/incus-spawn/orca-plugin` |
 
 `create` takes `--from`, `--project-root`, `--account`, `--proxy-only`, `--cpu`, `--memory` and `--disk`: see [Options](ORCA.md#options).
 Stdout holds only the JSON object Orca reads, and progress goes to stderr.

@@ -412,6 +412,7 @@ public class CompletionCommand extends BaseCommand {
                 'suspend:stop the instance of the Orca runtime on stdin'
                 'resume:start the instance of the Orca runtime on stdin'
                 'destroy:delete the instance of the Orca runtime on stdin'
+                'plugin:write the isx plugin for Orca'
               )
               case $words[1] in
                 create) _arguments \\
@@ -422,6 +423,7 @@ public class CompletionCommand extends BaseCommand {
                   '--cpu=[CPU core limit]:cpus' \\
                   '--memory=[Memory limit]:memory' \\
                   '--disk=[Disk size limit]:disk' ;;
+                plugin) _arguments '--output=[Directory to write the plugin to]:directory:_files -/' ;;
                 suspend|resume|destroy) ;;
                 *) _describe -t subcmds 'orca subcommand' _orca_subcmds ;;
               esac
@@ -678,11 +680,17 @@ public class CompletionCommand extends BaseCommand {
                   local j
                   for (( j=i+1; j < cword; j++ )); do
                     case "${words[j]}" in
-                      create|suspend|resume|destroy) orca_cmd="${words[j]}"; break ;;
+                      create|suspend|resume|destroy|plugin) orca_cmd="${words[j]}"; break ;;
                     esac
                   done
                   case "$orca_cmd" in
-                    "") COMPREPLY=( $(compgen -W "create suspend resume destroy --help" -- "$cur") ) ;;
+                    "") COMPREPLY=( $(compgen -W "create suspend resume destroy plugin --help" -- "$cur") ) ;;
+                    plugin)
+                      if [[ "$prev" == --output ]]; then
+                        _filedir -d
+                        return
+                      fi
+                      COMPREPLY=( $(compgen -W "--help --output" -- "$cur") ) ;;
                     create)
                       case "$prev" in
                         --from)
@@ -1021,10 +1029,12 @@ public class CompletionCommand extends BaseCommand {
             complete -c isx -f -n '__isx_using_subcommand templates; and __isx_using_subcommand new' -l project -d 'Create in project-local directory'
 
             # ── orca ────────────────────────────────────────────────────────────────────
-            complete -c isx -f -n '__isx_using_subcommand orca; and not string match -qr -- "\\b(create|suspend|resume|destroy)\\b" (commandline -opc)' -a create -d 'Branch an instance for an Orca workspace'
-            complete -c isx -f -n '__isx_using_subcommand orca; and not string match -qr -- "\\b(create|suspend|resume|destroy)\\b" (commandline -opc)' -a suspend -d 'Stop the instance of the Orca runtime on stdin'
-            complete -c isx -f -n '__isx_using_subcommand orca; and not string match -qr -- "\\b(create|suspend|resume|destroy)\\b" (commandline -opc)' -a resume -d 'Start the instance of the Orca runtime on stdin'
-            complete -c isx -f -n '__isx_using_subcommand orca; and not string match -qr -- "\\b(create|suspend|resume|destroy)\\b" (commandline -opc)' -a destroy -d 'Delete the instance of the Orca runtime on stdin'
+            complete -c isx -f -n '__isx_using_subcommand orca; and not string match -qr -- "\\b(create|suspend|resume|destroy|plugin)\\b" (commandline -opc)' -a create -d 'Branch an instance for an Orca workspace'
+            complete -c isx -f -n '__isx_using_subcommand orca; and not string match -qr -- "\\b(create|suspend|resume|destroy|plugin)\\b" (commandline -opc)' -a suspend -d 'Stop the instance of the Orca runtime on stdin'
+            complete -c isx -f -n '__isx_using_subcommand orca; and not string match -qr -- "\\b(create|suspend|resume|destroy|plugin)\\b" (commandline -opc)' -a resume -d 'Start the instance of the Orca runtime on stdin'
+            complete -c isx -f -n '__isx_using_subcommand orca; and not string match -qr -- "\\b(create|suspend|resume|destroy|plugin)\\b" (commandline -opc)' -a destroy -d 'Delete the instance of the Orca runtime on stdin'
+            complete -c isx -f -n '__isx_using_subcommand orca; and not string match -qr -- "\\b(create|suspend|resume|destroy|plugin)\\b" (commandline -opc)' -a plugin -d 'Write the isx plugin for Orca'
+            complete -c isx -n '__isx_using_subcommand orca; and __isx_using_subcommand plugin' -l output -d 'Directory to write the plugin to' -r -a '(__fish_complete_directories)'
             complete -c isx -f -n '__isx_using_subcommand orca; and __isx_using_subcommand create' -l from -d 'Template or instance to branch' -x -a '(__isx_instances)'
             complete -c isx -f -n '__isx_using_subcommand orca; and __isx_using_subcommand create' -l project-root -d 'Checkout in the instance Orca opens' -x
             complete -c isx -f -n '__isx_using_subcommand orca; and __isx_using_subcommand create' -l account -d 'Credential account as <namespace>=<account>' -x -a '(__isx_accounts)'

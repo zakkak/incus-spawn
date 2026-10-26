@@ -1,6 +1,7 @@
 package dev.incusspawn.orca;
 
 import dev.incusspawn.config.NetworkMode;
+import dev.incusspawn.git.GitRemoteUtils;
 import dev.incusspawn.incus.Metadata;
 import dev.incusspawn.lifecycle.BranchFlow;
 import dev.incusspawn.util.BuildOutput;
@@ -60,7 +61,7 @@ public final class OrcaRuntime {
     /**
      * What {@code isx orca create} branches, beyond the template's defaults.
      *
-     * @param template    the template (or instance) to branch
+     * @param template    the template (or instance) to branch, or null to {@linkplain #chooseTemplate choose}
      * @param projectRoot the checkout in the instance Orca opens, or null to choose
      */
     public record CreateOptions(String template, String projectRoot, List<String> accounts,
@@ -85,20 +86,21 @@ public final class OrcaRuntime {
     public void create(OrcaRecipe.Context context, CreateOptions options, Consumer<String> emit) {
         var name = OrcaRecipe.instanceName(context.workspaceName(), context.instanceId());
         var nonce = HexFormat.of().formatHex(randomBytes());
-        var request = new BranchFlow.Request(options.template(), name, false, null, options.network(), null,
+        var remote = context.provisionedRoot() ? context.repoUrl() : backend.hostRemote(context.repoPath());
+        var template = options.template() != null ? options.template() : chooseTemplate(remote, backend.templates());
+        var request = new BranchFlow.Request(template, name, false, null, options.network(), null,
                 options.cpu(), options.memory(), options.disk(), options.accounts(), true,
                 Map.of(Metadata.ORCA_RUNTIME, context.instanceId(), Metadata.ORCA_CREATE, nonce));
-        try (var held = backend.holdTemplate(options.template())) {
+        try (var held = backend.holdTemplate(template)) {
             var source = backend.preflight(request);
             if (!source.ssh()) {
-                throw new OrcaRecipe.RecipeException("'" + options.template() + "' has no SSH server, which Orca"
+                throw new OrcaRecipe.RecipeException("'" + template + "' has no SSH server, which Orca"
                         + " connects through: add the " + TOOL + " tool to it, which brings sshd, and rebuild it.");
             }
             if (!source.tools().contains(TOOL)) {
-                BuildOutput.warn("'" + options.template() + "' was not built with the " + TOOL + " tool. Orca's server"
+                BuildOutput.warn("'" + template + "' was not built with the " + TOOL + " tool. Orca's server"
                         + " needs tar and awk in the instance, which it installs.");
             }
-            var remote = context.provisionedRoot() ? context.repoUrl() : backend.hostRemote(context.repoPath());
             var checkout = OrcaCheckout.plan(options.projectRoot(), remote, source.repos());
             var script = checkout.script(context);
             // Set once by whichever settles the branch first: the result written, a failure, or an exit
@@ -123,6 +125,41 @@ public final class OrcaRuntime {
                 }
             }
         }
+    }
+
+    /**
+     * The template for a recipe that names none, as the isx plugin for Orca's does: it is one
+     * recipe for every repository. Only a template built with the {@value #TOOL} tool is a
+     * candidate. The one that clones the repository's remote wins, else the only candidate; with
+     * none, or several and no clone to tell them apart, the user names one.
+     *
+     * @param remote the repository's remote, or null when it has none
+     */
+    static String chooseTemplate(String remote, List<OrcaBackend.Template> templates) {
+        var candidates = templates.stream().filter(t -> t.tools().contains(TOOL)).toList();
+        if (candidates.isEmpty()) {
+            throw new OrcaRecipe.RecipeException("no template is built with the " + TOOL + " tool: add it to a"
+                    + " template's tools and build it, or name a template with --from.");
+        }
+        if (remote != null) {
+            var cloning = candidates.stream().filter(t -> t.repos().stream()
+                    .anyMatch(r -> r.url() != null && GitRemoteUtils.urlsMatch(r.url(), remote))).toList();
+            if (cloning.size() == 1) return cloning.getFirst().name();
+            if (cloning.size() > 1) {
+                throw new OrcaRecipe.RecipeException("several templates built with the " + TOOL + " tool clone this"
+                        + " repository (" + names(cloning) + "): " + HOW_TO_NAME);
+            }
+        }
+        if (candidates.size() == 1) return candidates.getFirst().name();
+        throw new OrcaRecipe.RecipeException("several templates are built with the " + TOOL + " tool ("
+                + names(candidates) + ") and none clones this repository: " + HOW_TO_NAME);
+    }
+
+    private static final String HOW_TO_NAME = "name one in the repository's incus-spawn.yaml, or with --from"
+            + " in a recipe of its own orca.yaml.";
+
+    private static String names(List<OrcaBackend.Template> templates) {
+        return String.join(", ", templates.stream().map(OrcaBackend.Template::name).sorted().toList());
     }
 
     /** A SecureRandom per call: a static one would be seeded at native-image build time. */

@@ -27,6 +27,12 @@ public interface OrcaBackend {
     record Source(boolean ssh, Set<String> tools, List<ActionContext.RepoInfo> repos,
                   BranchFlow.Preflight preflight) {}
 
+    /** A built template, as a candidate when a recipe names none. */
+    record Template(String name, Set<String> tools, List<ActionContext.RepoInfo> repos) {}
+
+    /** Every built template, from one listing. */
+    List<Template> templates();
+
     /** A hold released by closing it, which cannot fail. */
     interface Hold extends AutoCloseable {
         @Override

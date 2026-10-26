@@ -2,6 +2,7 @@ package dev.incusspawn.orca;
 
 import dev.incusspawn.Environment;
 import dev.incusspawn.RuntimeServices;
+import dev.incusspawn.config.ImageDef;
 import dev.incusspawn.command.InstancePrep;
 import dev.incusspawn.incus.IncusClient;
 import dev.incusspawn.incus.IncusException;
@@ -23,7 +24,9 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
@@ -69,6 +72,31 @@ public final class IncusOrcaBackend implements OrcaBackend {
                 preflight.defs());
         return new Source(ssh, resolver.collectInstalledTools(preflight.sourceInstance(), preflight.template()),
                 resolver.collectRepos(preflight.sourceInstance(), preflight.template()), preflight);
+    }
+
+    @Override
+    public List<Template> templates() {
+        JqValue listing;
+        try {
+            listing = incus.listJsonConfig();
+        } catch (IncusException e) {
+            throw new OrcaRecipe.RecipeException("cannot list the templates: " + e.getMessage());
+        }
+        var resolver = new ActionResolver(incus, RuntimeServices.toolDefLoader(), RuntimeServices.toolSetups(),
+                ImageDef.loadAll());
+        var templates = new ArrayList<Template>();
+        for (var instance : listing.asList()) {
+            var name = instance.pathText("name", "");
+            var type = instance.path("config").pathText(Metadata.TYPE, "");
+            // A rebuild's temporary carries the template's type until it replaces it
+            if (name.endsWith("-rebuilding")
+                    || !(Metadata.TYPE_BASE.equals(type) || Metadata.TYPE_PROJECT.equals(type))) {
+                continue;
+            }
+            templates.add(new Template(name, resolver.collectInstalledTools(instance, name),
+                    resolver.collectRepos(instance, name)));
+        }
+        return templates;
     }
 
     @Override

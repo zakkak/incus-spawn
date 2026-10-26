@@ -91,6 +91,41 @@ class OrcaRuntimeTest {
     }
 
     @Test
+    void aRecipeThatNamesNoTemplateGetsTheOneThatClonesTheRepository() {
+        backend.templates = List.of(
+                template("tpl-other", Set.of("orca", "sshd"), "https://github.com/acme/other"),
+                template("tpl-app", Set.of("orca", "sshd"), "https://github.com/acme/app.git"),
+                template("tpl-plain", Set.of("sshd"), "https://github.com/acme/app.git"));
+        create(CONTEXT, new OrcaRuntime.CreateOptions(null, null, List.of(), null, null, null, null));
+        assertEquals("tpl-app", backend.requests.getFirst().source());
+    }
+
+    @Test
+    void theTemplateChoiceIsTheOnlyOneBuiltForOrcaOrTheUsers() {
+        var app = template("tpl-app", Set.of("orca"), "https://github.com/acme/app");
+        var web = template("tpl-web", Set.of("orca"), "https://github.com/acme/web");
+        var app2 = template("tpl-app2", Set.of("orca"), "https://github.com/acme/app");
+        var plain = template("tpl-plain", Set.of("sshd"), null);
+
+        assertEquals("tpl-web", OrcaRuntime.chooseTemplate("git@github.com:acme/tool.git", List.of(web, plain)));
+        assertEquals("tpl-web", OrcaRuntime.chooseTemplate(null, List.of(web)));
+        var none = assertThrows(OrcaRecipe.RecipeException.class, () -> OrcaRuntime.chooseTemplate(null, List.of(plain)));
+        assertTrue(none.getMessage().contains("no template is built with the orca tool"), none.getMessage());
+        var unclear = assertThrows(OrcaRecipe.RecipeException.class,
+                () -> OrcaRuntime.chooseTemplate("https://github.com/acme/tool", List.of(app, web)));
+        assertTrue(unclear.getMessage().contains("tpl-app, tpl-web"), unclear.getMessage());
+        assertTrue(unclear.getMessage().contains("incus-spawn.yaml"), unclear.getMessage());
+        var twice = assertThrows(OrcaRecipe.RecipeException.class,
+                () -> OrcaRuntime.chooseTemplate("https://github.com/acme/app.git", List.of(app, app2, web)));
+        assertTrue(twice.getMessage().contains("tpl-app, tpl-app2"), twice.getMessage());
+    }
+
+    private static OrcaBackend.Template template(String name, Set<String> tools, String repo) {
+        return new OrcaBackend.Template(name, tools, repo == null ? List.of()
+                : List.of(new ActionContext.RepoInfo("r", "/home/agentuser/r", repo)));
+    }
+
+    @Test
     void aRepositoryWithNoRemoteIsRefusedBeforeAnythingIsCreated() {
         backend.remote = null;
         assertThrows(OrcaRecipe.RecipeException.class, () -> create(CONTEXT, FROM_TEMPLATE));
@@ -221,12 +256,18 @@ class OrcaRuntimeTest {
         String remote = "git@github.com:acme/app.git";
         int exit = 0;
         Runnable duringRun = () -> {};
+        List<Template> templates = List.of();
 
         void instance(String name, String runtime, String status) {
             var config = new LinkedHashMap<String, String>();
             if (runtime != null) config.put(Metadata.ORCA_RUNTIME, runtime);
             config.put(STATUS, status);
             instances.put(name, config);
+        }
+
+        @Override
+        public List<Template> templates() {
+            return templates;
         }
 
         @Override

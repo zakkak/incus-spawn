@@ -149,7 +149,13 @@ public final class Metadata {
      * so a payload cannot name an instance Orca did not get from isx. Never inherited, as the MCP
      * stamps are not ({@link #isOwnershipKey}).
      */
-    public static final String ORCA_RUNTIME = PREFIX + "orca-runtime";
+    public static final String ORCA_PREFIX = PREFIX + "orca-";
+    public static final String ORCA_RUNTIME = ORCA_PREFIX + "runtime";
+    /**
+     * The {@code isx orca create} run that made the instance, a random value: a create that fails
+     * deletes only the instance it made itself, never one a concurrent create for the same runtime made.
+     */
+    public static final String ORCA_CREATE = ORCA_PREFIX + "create";
 
     /**
      * MCP ownership (see {@code isx mcp}). An instance belongs to the host user in
@@ -299,7 +305,7 @@ public final class Metadata {
      * {@code isx orca}): a copy belongs to whoever made the copy, so it never inherits one.
      */
     public static boolean isOwnershipKey(String key) {
-        return isMcpKey(key) || ORCA_RUNTIME.equals(key);
+        return isMcpKey(key) || key.startsWith(ORCA_PREFIX);
     }
 
     /**

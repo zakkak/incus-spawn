@@ -5,8 +5,11 @@ import dev.incusspawn.incus.Metadata;
 import dev.incusspawn.lifecycle.BranchFlow;
 import dev.incusspawn.util.BuildOutput;
 
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 /**
  * The four commands of an Orca environment recipe, on an {@link OrcaBackend}.
@@ -22,9 +25,36 @@ public final class OrcaRuntime {
     static final String TOOL = "orca";
 
     private final OrcaBackend backend;
+    private final ExitHooks exitHooks;
+
+    /**
+     * Work the JVM runs as it exits: Orca cancels a create by signalling it, which runs no catch.
+     * {@link #RUNTIME} in use, a fake in tests.
+     */
+    public interface ExitHooks {
+        /** Run {@code hook} if the process exits before the returned handle is closed. */
+        OrcaBackend.Hold onExit(Runnable hook);
+
+        ExitHooks RUNTIME = hook -> {
+            var thread = new Thread(hook, "isx-orca-rollback");
+            Runtime.getRuntime().addShutdownHook(thread);
+            return () -> {
+                try {
+                    Runtime.getRuntime().removeShutdownHook(thread);
+                } catch (IllegalStateException exiting) {
+                    // The hook is running or about to: it decides, by the same flag, whether to act
+                }
+            };
+        };
+    }
 
     public OrcaRuntime(OrcaBackend backend) {
+        this(backend, ExitHooks.RUNTIME);
+    }
+
+    public OrcaRuntime(OrcaBackend backend, ExitHooks exitHooks) {
         this.backend = backend;
+        this.exitHooks = exitHooks;
     }
 
     /**
@@ -42,15 +72,22 @@ public final class OrcaRuntime {
     }
 
     /**
-     * Branch and start an instance for Orca's runtime, ready its checkout, and return the result
-     * Orca parses. Every check that can refuse runs before anything is created; once the branch
-     * exists, a failure deletes it again, since Orca destroys only what a result named.
+     * Branch and start an instance for Orca's runtime, ready its checkout, and hand {@code emit} the
+     * result Orca parses. Every check that can refuse runs before anything is created; once the
+     * branch exists, a failure deletes it again, since Orca destroys only what a result named. So
+     * does the process exiting first (Orca cancelling the create), and a result that could not be
+     * written, which Orca never read.
+     *
+     * <p>A failure deletes only the instance this create made, by its {@link Metadata#ORCA_CREATE}
+     * stamp: a second create Orca ran for the same runtime meanwhile finds the name taken, and its
+     * failure must not delete the first one's instance.
      */
-    public String create(OrcaRecipe.Context context, CreateOptions options) {
+    public void create(OrcaRecipe.Context context, CreateOptions options, Consumer<String> emit) {
         var name = OrcaRecipe.instanceName(context.workspaceName(), context.instanceId());
+        var nonce = HexFormat.of().formatHex(randomBytes());
         var request = new BranchFlow.Request(options.template(), name, false, null, options.network(), null,
                 options.cpu(), options.memory(), options.disk(), options.accounts(), true,
-                Map.of(Metadata.ORCA_RUNTIME, context.instanceId()));
+                Map.of(Metadata.ORCA_RUNTIME, context.instanceId(), Metadata.ORCA_CREATE, nonce));
         try (var held = backend.holdTemplate(options.template())) {
             var source = backend.preflight(request);
             if (!source.ssh()) {
@@ -64,30 +101,45 @@ public final class OrcaRuntime {
             var remote = context.provisionedRoot() ? context.repoUrl() : backend.hostRemote(context.repoPath());
             var checkout = OrcaCheckout.plan(options.projectRoot(), remote, source.repos());
             var script = checkout.script(context);
-            try {
-                backend.create(source);
-                BuildOutput.step("Preparing " + checkout.projectRoot() + " for Orca...");
-                var exit = backend.run(name, script);
-                if (exit != 0) {
-                    throw new OrcaRecipe.RecipeException("preparing the checkout at " + checkout.projectRoot()
-                            + " in " + name + " failed (exit " + exit + ").");
+            // Set once by whichever settles the branch first: the result written, a failure, or an exit
+            var settled = new AtomicBoolean();
+            try (var hook = exitHooks.onExit(() -> {
+                if (settled.compareAndSet(false, true)) rollBack(name, nonce, null);
+            })) {
+                try {
+                    backend.create(source);
+                    BuildOutput.step("Preparing " + checkout.projectRoot() + " for Orca...");
+                    var exit = backend.run(name, script);
+                    if (exit != 0) {
+                        throw new OrcaRecipe.RecipeException("preparing the checkout at " + checkout.projectRoot()
+                                + " in " + name + " failed (exit " + exit + ").");
+                    }
+                    emit.accept(OrcaRecipe.toJson(OrcaRecipe.result(context.schemaVersion(), checkout.projectRoot(),
+                            backend.target(name), context.instanceId())));
+                    settled.set(true);
+                } catch (RuntimeException e) {
+                    if (settled.compareAndSet(false, true)) rollBack(name, nonce, e);
+                    throw e;
                 }
-                return OrcaRecipe.toJson(OrcaRecipe.result(context.schemaVersion(), checkout.projectRoot(),
-                        backend.target(name), context.instanceId()));
-            } catch (RuntimeException e) {
-                rollBack(name, context.instanceId(), e);
-                throw e;
             }
         }
     }
 
-    private void rollBack(String name, String runtimeId, RuntimeException cause) {
+    /** A SecureRandom per call: a static one would be seeded at native-image build time. */
+    private static byte[] randomBytes() {
+        var bytes = new byte[16];
+        new java.security.SecureRandom().nextBytes(bytes);
+        return bytes;
+    }
+
+    /** Delete the branch this create made, if it is still the one stamped with its {@code nonce}. */
+    private void rollBack(String name, String nonce, RuntimeException cause) {
         try {
-            if (backend.destroyIf(name, config -> runtimeId.equals(config.get(Metadata.ORCA_RUNTIME)))) {
+            if (backend.destroyIf(name, config -> nonce.equals(config.get(Metadata.ORCA_CREATE)))) {
                 BuildOutput.note("Removed " + name + ", which Orca will not get.");
             }
         } catch (RuntimeException e) {
-            cause.addSuppressed(e);
+            if (cause != null) cause.addSuppressed(e);
             BuildOutput.warn("Could not remove " + name + " after the failed create: " + e.getMessage(),
                     "Remove it with: isx destroy " + name);
         }
@@ -100,7 +152,12 @@ public final class OrcaRuntime {
         if (!"Stopped".equals(config.get(OrcaBackend.STATUS))) backend.stop(lifecycle.instance());
     }
 
-    /** Start the runtime's instance and return the result again, which Orca reconnects with. */
+    /**
+     * Start the runtime's instance and return the result again, which Orca reconnects with. For
+     * Orca's own worktree the target is made afresh, so an isx that moved since is found. A
+     * provisioned root keeps the one it had: Orca refuses a resumed root whose SSH identity or
+     * ProxyCommand changed.
+     */
     public String resume(String payload) {
         var lifecycle = OrcaRecipe.parsePayload(payload, "resume");
         requireOwned(lifecycle);
@@ -108,8 +165,12 @@ public final class OrcaRuntime {
             throw new OrcaRecipe.RecipeException("the payload's recipe result has no projectRoot.");
         }
         backend.start(lifecycle.instance());
-        return OrcaRecipe.toJson(OrcaRecipe.result(lifecycle.schemaVersion(), lifecycle.projectRoot(),
-                backend.target(lifecycle.instance()), lifecycle.runtimeId()));
+        var kept = lifecycle.target();
+        var target = lifecycle.schemaVersion() == OrcaRecipe.SCHEMA_PROVISIONED_ROOT
+                && !kept.identityFile().isEmpty() && !kept.proxyCommand().isEmpty()
+                ? kept : backend.target(lifecycle.instance());
+        return OrcaRecipe.toJson(OrcaRecipe.result(lifecycle.schemaVersion(), lifecycle.projectRoot(), target,
+                lifecycle.runtimeId()));
     }
 
     /**

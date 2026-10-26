@@ -53,7 +53,6 @@ class OrcaRecipeTest {
             "ssh://git@github.com:2222/acme/app.git, https://github.com/acme/app.git",
             "git://example.org/app.git, https://example.org/app.git",
             "https://git.example.org:8443/team/app.git, https://git.example.org:8443/team/app.git",
-            "http://git.internal/app.git, http://git.internal/app.git",
     })
     void theInstanceClonesOverHttpsWithoutCredentials(String remote, String clone) {
         assertEquals(clone, OrcaRecipe.guestCloneUrl(remote));
@@ -61,7 +60,8 @@ class OrcaRecipeTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"/home/me/app", "../app", "file:///home/me/app", "ext::sh -c touch% /tmp/x",
-            "fd::3", "git@host:~me/app", "ssh://host/~me/app", "https://host", "https://host/", "app"})
+            "fd::3", "git@host:~me/app", "ssh://host/~me/app", "https://host", "https://host/", "app",
+            "http://git.internal/app.git"})
     void aLocalOrHelperRemoteIsRefused(String remote) {
         var e = assertThrows(OrcaRecipe.RecipeException.class, () -> OrcaRecipe.guestCloneUrl(remote));
         assertTrue(e.getMessage().contains("--project-root"), e.getMessage());
@@ -72,6 +72,8 @@ class OrcaRecipeTest {
         var e = assertThrows(OrcaRecipe.RecipeException.class,
                 () -> OrcaRecipe.guestCloneUrl("ftp://user:hunter2@host/app"));
         assertFalse(e.getMessage().contains("hunter2"), e.getMessage());
+        assertEquals("http://host/a@b", OrcaRecipe.stripUserInfo("http://u:p@ss@host/a@b"));
+        assertEquals("https://host/app", OrcaRecipe.stripUserInfo("https://host/app"));
     }
 
     @Test
@@ -180,6 +182,9 @@ class OrcaRecipeTest {
         assertThrows(OrcaRecipe.RecipeException.class, () -> OrcaRecipe.parsePayload("[1]", "destroy"));
         assertThrows(OrcaRecipe.RecipeException.class, () -> OrcaRecipe.parsePayload(
                 payload("destroy", "orca-42", "incus-spawn").replace("orca-ws-1a2b3c", "../../etc"), "destroy"));
+        assertThrows(OrcaRecipe.RecipeException.class, () -> OrcaRecipe.parsePayload(
+                payload("resume", "orca-42", "incus-spawn").replace("{\"schemaVersion\":1,\"connection\"",
+                        "{\"schemaVersion\":3,\"connection\""), "resume"));
     }
 
     /** A payload as Orca's {@code buildEphemeralVmRecipeLifecyclePayload} writes it. */

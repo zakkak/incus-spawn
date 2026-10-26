@@ -69,6 +69,13 @@ class OrcaCheckoutTest {
     }
 
     @Test
+    void aGivenProjectRootNeedsNoRemoteTheInstanceCanClone() {
+        var checkout = OrcaCheckout.plan("~/src/docs", "/home/me/local-only", TEMPLATE_REPOS);
+        assertEquals("/home/agentuser/src/docs", checkout.projectRoot());
+        assertNull(checkout.cloneUrl());
+    }
+
+    @Test
     void noRemoteAndNoProjectRootCannotBePlanned() {
         var e = assertThrows(OrcaRecipe.RecipeException.class, () -> OrcaCheckout.plan(null, null, TEMPLATE_REPOS));
         assertTrue(e.getMessage().contains("--project-root"), e.getMessage());

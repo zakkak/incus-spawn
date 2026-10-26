@@ -108,7 +108,14 @@ public class OrcaCommand extends BaseCommand {
             var context = OrcaRecipe.Context.fromEnv(System.getenv(), Path.of("").toAbsolutePath());
             var options = new OrcaRuntime.CreateOptions(template(from, context.repoPath()), projectRoot, accounts,
                     proxyOnly ? NetworkMode.PROXY_ONLY : NetworkMode.FULL, cpu, memory, disk);
-            print(guard.protocolOut, runtime().create(context, options));
+            // Inside create, so a result that cannot be written deletes the branch Orca never heard of
+            runtime().create(context, options, json -> {
+                try {
+                    print(guard.protocolOut, json);
+                } catch (IOException e) {
+                    throw new java.io.UncheckedIOException("could not write the result for Orca: " + e.getMessage(), e);
+                }
+            });
             return CommandResult.SUCCESS;
         }
     }

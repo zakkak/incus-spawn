@@ -34,18 +34,32 @@ class OrcaRuntimeTest {
             new OrcaRuntime.CreateOptions("tpl-dev", null, List.of("claude=work"), null, null, null, null);
 
     private final FakeBackend backend = new FakeBackend();
-    private final OrcaRuntime runtime = new OrcaRuntime(backend);
+    private final List<Runnable> exitHooks = new ArrayList<>();
+    private final OrcaRuntime runtime = new OrcaRuntime(backend, hook -> {
+        exitHooks.add(hook);
+        return () -> exitHooks.remove(hook);
+    });
+
+    /** What create emits, as Orca reads it from stdout. */
+    private String create(OrcaRecipe.Context context, OrcaRuntime.CreateOptions options) {
+        var emitted = new ArrayList<String>();
+        runtime.create(context, options, emitted::add);
+        assertEquals(1, emitted.size());
+        return emitted.getFirst();
+    }
 
     @Test
     void createBranchesAStampedInstanceAndPrintsItsConnection() {
-        var json = JqValues.parseStrict(runtime.create(CONTEXT, FROM_TEMPLATE));
+        var json = JqValues.parseStrict(create(CONTEXT, FROM_TEMPLATE));
 
         var request = backend.requests.getFirst();
         assertEquals("tpl-dev", request.source());
         assertEquals(NAME, request.name());
         assertEquals(Boolean.FALSE, request.gui(), "nobody watches an Orca instance's display");
         assertEquals(List.of("claude=work"), request.accountOverrides());
-        assertEquals(Map.of(Metadata.ORCA_RUNTIME, RUNTIME), request.extraConfig());
+        assertEquals(RUNTIME, request.extraConfig().get(Metadata.ORCA_RUNTIME));
+        assertTrue(request.extraConfig().get(Metadata.ORCA_CREATE).matches("[0-9a-f]{32}"), request.extraConfig().toString());
+        assertEquals(List.of(), exitHooks, "a create that settled leaves no exit hook behind");
         assertEquals(List.of("hold tpl-dev", "preflight", "create", "run " + NAME, "release tpl-dev"), backend.calls);
         assertTrue(backend.scripts.getFirst().contains("git clone -- 'https://github.com/acme/app.git'"),
                 backend.scripts.getFirst());
@@ -58,7 +72,7 @@ class OrcaRuntimeTest {
     @Test
     void aTemplateWithoutSshdIsRefusedBeforeAnythingIsCreated() {
         backend.ssh = false;
-        var e = assertThrows(OrcaRecipe.RecipeException.class, () -> runtime.create(CONTEXT, FROM_TEMPLATE));
+        var e = assertThrows(OrcaRecipe.RecipeException.class, () -> create(CONTEXT, FROM_TEMPLATE));
         assertTrue(e.getMessage().contains("orca tool"), e.getMessage());
         assertFalse(backend.calls.contains("create"));
         assertEquals("release tpl-dev", backend.calls.getLast());
@@ -69,7 +83,7 @@ class OrcaRuntimeTest {
         backend.tools = Set.of("sshd");
         var warnings = new ArrayList<String>();
         try (var bound = BuildOutput.bind(Output.diagnosticsTo(warnings::add))) {
-            runtime.create(CONTEXT, FROM_TEMPLATE);
+            create(CONTEXT, FROM_TEMPLATE);
         }
         assertTrue(backend.calls.contains("create"));
         assertEquals(1, warnings.size(), warnings.toString());
@@ -79,16 +93,42 @@ class OrcaRuntimeTest {
     @Test
     void aRepositoryWithNoRemoteIsRefusedBeforeAnythingIsCreated() {
         backend.remote = null;
-        assertThrows(OrcaRecipe.RecipeException.class, () -> runtime.create(CONTEXT, FROM_TEMPLATE));
+        assertThrows(OrcaRecipe.RecipeException.class, () -> create(CONTEXT, FROM_TEMPLATE));
         assertFalse(backend.calls.contains("create"));
     }
 
     @Test
     void aFailedCheckoutDeletesTheBranchOrcaWillNeverHear() {
         backend.exit = 128;
-        var e = assertThrows(OrcaRecipe.RecipeException.class, () -> runtime.create(CONTEXT, FROM_TEMPLATE));
+        var e = assertThrows(OrcaRecipe.RecipeException.class, () -> create(CONTEXT, FROM_TEMPLATE));
         assertTrue(e.getMessage().contains("exit 128"), e.getMessage());
         assertTrue(backend.calls.contains("destroy " + NAME), backend.calls.toString());
+        assertNull(backend.instances.get(NAME));
+    }
+
+    @Test
+    void aFailedCreateLeavesAConcurrentCreatesInstanceAlone() {
+        // Orca ran create twice for one runtime: both passed preflight, the other's copy came first
+        backend.instance(NAME, RUNTIME, "Running");
+        backend.instances.get(NAME).put(Metadata.ORCA_CREATE, "the-other-create");
+        assertThrows(OrcaRecipe.RecipeException.class, () -> create(CONTEXT, FROM_TEMPLATE));
+        assertNotNull(backend.instances.get(NAME), "the other create's instance is not this one's to delete");
+    }
+
+    @Test
+    void aCreateCancelledByOrcaDeletesItsBranch() {
+        // Orca signals the create; the exit hook runs while the checkout is still being prepared
+        backend.duringRun = () -> exitHooks.forEach(Runnable::run);
+        create(CONTEXT, FROM_TEMPLATE);
+        assertTrue(backend.calls.contains("destroy " + NAME), backend.calls.toString());
+    }
+
+    @Test
+    void aResultThatCannotBeWrittenDeletesTheBranch() {
+        var e = assertThrows(java.io.UncheckedIOException.class, () -> runtime.create(CONTEXT, FROM_TEMPLATE, json -> {
+            throw new java.io.UncheckedIOException(new java.io.IOException("Broken pipe"));
+        }));
+        assertTrue(e.getMessage().contains("Broken pipe"), e.getMessage());
         assertNull(backend.instances.get(NAME));
     }
 
@@ -99,7 +139,7 @@ class OrcaRuntimeTest {
                 "ORCA_RECIPE_RESULT_SCHEMA_VERSION", "2", "ORCA_REPO_URL", "https://github.com/acme/app.git",
                 "ORCA_REPO_REF", "refs/heads/main", "ORCA_REPO_REF_HEAD", "0123456789abcdef0123456789abcdef01234567",
                 "ORCA_REPO_BRANCH", "ws"), Path.of("/w"));
-        var json = JqValues.parseStrict(runtime.create(context, FROM_TEMPLATE));
+        var json = JqValues.parseStrict(create(context, FROM_TEMPLATE));
         assertEquals("provisioned-root", json.pathText("checkoutMode", ""));
         assertFalse(backend.scripts.getFirst().contains("someone-else"), backend.scripts.getFirst());
     }
@@ -141,6 +181,27 @@ class OrcaRuntimeTest {
     }
 
     @Test
+    void aResumedProvisionedRootKeepsTheTargetOrcaChecks() {
+        // Orca refuses a resumed provisioned root whose ProxyCommand or identity changed
+        backend.instance(NAME, RUNTIME, "Stopped");
+        var payload = OrcaRecipeTest.payload("resume", RUNTIME, "incus-spawn").replace("orca-ws-1a2b3c", NAME)
+                .replace("\"recipeResult\":{\"schemaVersion\":1,", "\"recipeResult\":{\"schemaVersion\":2,\"checkoutMode\":\"provisioned-root\",")
+                .replace("\"username\":\"agentuser\"}", "\"username\":\"agentuser\",\"identityFile\":\"/old/key\",\"proxyCommand\":\"/old/isx ssh-proxy x\"}");
+        var json = JqValues.parseStrict(runtime.resume(payload));
+        assertEquals("provisioned-root", json.pathText("checkoutMode", ""));
+        assertEquals("/old/isx ssh-proxy x", json.path("connection").path("target").pathText("proxyCommand", ""));
+        assertEquals("/old/key", json.path("connection").path("target").pathText("identityFile", ""));
+    }
+
+    @Test
+    void aResumedWorktreeGetsAFreshTarget() {
+        backend.instance(NAME, RUNTIME, "Stopped");
+        var json = JqValues.parseStrict(runtime.resume(
+                OrcaRecipeTest.payload("resume", RUNTIME, "incus-spawn").replace("orca-ws-1a2b3c", NAME)));
+        assertEquals("isx ssh-proxy " + NAME, json.path("connection").path("target").pathText("proxyCommand", ""));
+    }
+
+    @Test
     void destroyDeletesTheRuntimesInstanceAndAGoneOneIsSuccess() {
         backend.instance(NAME, RUNTIME, "Running");
         var payload = OrcaRecipeTest.payload("destroy", RUNTIME, "incus-spawn").replace("orca-ws-1a2b3c", NAME);
@@ -159,6 +220,7 @@ class OrcaRuntimeTest {
         Set<String> tools = Set.of("orca", "sshd");
         String remote = "git@github.com:acme/app.git";
         int exit = 0;
+        Runnable duringRun = () -> {};
 
         void instance(String name, String runtime, String status) {
             var config = new LinkedHashMap<String, String>();
@@ -185,6 +247,9 @@ class OrcaRuntimeTest {
         public void create(Source source) {
             calls.add("create");
             var request = requests.getLast();
+            if (instances.containsKey(request.name())) {
+                throw new OrcaRecipe.RecipeException("an instance named '" + request.name() + "' already exists.");
+            }
             var config = new LinkedHashMap<>(request.extraConfig());
             config.put(STATUS, "Running");
             instances.put(request.name(), config);
@@ -194,6 +259,7 @@ class OrcaRuntimeTest {
         public int run(String instance, String script) {
             calls.add("run " + instance);
             scripts.add(script);
+            duringRun.run();
             return exit;
         }
 

@@ -3695,7 +3695,8 @@ Orca then dials the target, deploys its own server (`orcad`, with a pinned Node)
 - *The checkout comes from the remote, never the host's object store.*
   In Orca's default mode it adds its worktree under `projectRoot` itself and sends no repository URL, so `create` reads the host checkout's `origin` (else its only remote) with `git remote get-url`.
   A template repository with the same normalized URL (`GitRemoteUtils.urlsMatch`) is used where it is and fetched, which makes a workspace cost a CoW branch and a fetch; any other is cloned at `~/<name>`, or `~/<name>-2` when a template repository of another remote holds that path (a fork beside its upstream).
-  The clone goes over HTTPS through the proxy, which signs in to GitHub: SSH and `git://` remotes become the same path over HTTPS, user info is dropped, and a local path, `file://` or a remote helper is refused (`OrcaRecipe.guestCloneUrl`).
+  The clone goes over HTTPS through the proxy, which signs in to GitHub: SSH and `git://` remotes become the same path over HTTPS, user info is dropped, and plain HTTP (no integrity in worktree mode, which pins no commit), a local path, `file://` or a remote helper is refused (`OrcaRecipe.guestCloneUrl`).
+  A checkout that is already there (`--project-root`, or the template's clone) needs no clonable remote.
   For `checkoutMode: provisioned-root` (schema 2) Orca pins `ORCA_REPO_URL`, `ORCA_REPO_REF`, `ORCA_REPO_REF_HEAD` and `ORCA_REPO_BRANCH`, and the script checks out the branch at exactly that commit; a ref that would read as an option is refused before anything exists.
   The script runs as agentuser in a login shell, so Git sees the proxy environment and the GitHub credential helper, with `GIT_TERMINAL_PROMPT=0` so a remote that wants a password fails instead of hanging.
 - *Who may stop or delete: the runtime stamp.*
@@ -3703,9 +3704,11 @@ Orca then dials the target, deploys its own server (`orcad`, with a pinned Node)
   The payload comes from Orca's state on this host, but without the check a payload naming any instance (`userData.resourceId`) would stop or delete it.
   Like the MCP stamps, it is an ownership key (`Metadata.isOwnershipKey`): no copy inherits it, from the copy request on, so a user's branch of an Orca instance is the user's.
   `destroy` treats a missing instance as success, since Orca retries a destroy that failed, and deletes under the `deleting` mark only while the stamp still matches (`InstanceDestroyer.deleteHeldIf`).
-- *A failed create deletes its branch.*
+- *A failed create deletes its branch, and only its own.*
   Orca runs `destroy` only for a result it parsed, so an instance left by a `create` that failed after the copy (a clone refused, a start that failed) would be orphaned.
-  `OrcaRuntime.create` runs every refusal it can before the copy (preflight, `sshd` in the source's build, a remote it can clone), and deletes the branch, by the same stamp check, on any failure after it.
+  `OrcaRuntime.create` runs every refusal it can before the copy (preflight, `sshd` in the source's build, a remote it can clone), and deletes the branch on any failure after it.
+  The same holds for a result that could not be written (the write happens inside the guarded region) and for Orca cancelling the create, which signals the process group and runs no catch: a shutdown hook rolls back unless the create already settled (`OrcaRuntime.ExitHooks`, one `AtomicBoolean` deciding between the hook and the catch).
+  The rollback deletes only an instance carrying this run's random `orca-create` stamp, written by the copy request: two creates Orca ran for one runtime both pass preflight's name check, the loser's copy fails on the taken name, and a rollback by the runtime stamp alone would delete the winner's instance.
 - *The `orca` tool: what Orca's server needs in the instance.*
   Orca's first connect uploads a pinned Node and its server (`orcad`) and unpacks the Node archive with `tar -xzf`; after a restart it checks the installed server's hash with `sha256sum ... | awk`.
   `tpl-minimal` has neither, so the first connect failed with `tar: command not found`, and a resumed workspace with "Could not verify the installed orcad build hash" (found running Orca's own workspace flow against a real Incus).
@@ -3713,9 +3716,13 @@ Orca then dials the target, deploys its own server (`orcad`, with a pinned Node)
   `create` refuses a source without SSH and only warns about a missing `orca` tool, since a template may install the two packages itself.
 - *Orca's ProxyCommand starts a stopped instance.*
   Orca records a runtime as running until it suspends it, and reconnects to it on its own; an instance stopped outside Orca (a host restart, isx stopping it) made `isx ssh-proxy` refuse every attempt.
-  The result's `proxyCommand` is `isx ssh-proxy --start <name>`, which starts it as `isx shell` would (`InstancePrep.prepare`, under the instance's `starting` lock; a second connection that finds the lock taken waits up to two minutes for `Running`).
+  The result's `proxyCommand` is `isx ssh-proxy --start <name>`, which starts it as `isx shell` would (`InstancePrep.prepare`, under the instance's `starting` lock).
+  A connection that finds the lock taken retries it for up to two minutes and then prepares the instance itself, rather than taking `Running` for ready: a start is running before it has delivered the credential proofs, and a shell opened in that window would keep empty placeholders.
   The Host block a plain `ssh` uses keeps refusing, so `ssh <name>` never starts anything.
   `ssh-proxy` installs `StdioGuard`, since its stdout is the SSH stream and a start prints progress.
+- *A resumed provisioned root keeps its target.*
+  Orca refuses a resumed provisioned root whose `proxyCommand`, `identityFile` or other SSH ownership field changed (`resume-integrity.ts` there), so `resume` echoes those from the payload for schema 2.
+  For Orca's own worktree it builds the target afresh, so an isx installed elsewhere since is found.
 - *Names are stable per runtime.*
   The instance is `orca-<workspace slug>-<6 hex of sha256(runtime id)>`: two workspaces of one name differ, and a create Orca repeats for one runtime asks for the name it already has, which preflight refuses rather than making a second instance.
 - *Agents get their credentials as in any isx shell.*

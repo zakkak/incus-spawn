@@ -31,9 +31,10 @@ public record OrcaCheckout(String projectRoot, String cloneUrl, boolean fromTemp
      */
     public static OrcaCheckout plan(String projectRoot, String remoteUrl, List<ActionContext.RepoInfo> repos) {
         if (projectRoot != null) {
+            // The checkout may well be there already: a remote the instance cannot clone matters only if not
             var root = guestPath(projectRoot);
             var cloned = repos.stream().anyMatch(r -> r.path().equals(root));
-            return new OrcaCheckout(root, remoteUrl == null ? null : OrcaRecipe.guestCloneUrl(remoteUrl), cloned);
+            return new OrcaCheckout(root, cloneUrlIfAny(remoteUrl), cloned);
         }
         if (remoteUrl == null) {
             throw new OrcaRecipe.RecipeException("Orca's repository has no remote isx can clone in the instance:"
@@ -41,7 +42,7 @@ public record OrcaCheckout(String projectRoot, String cloneUrl, boolean fromTemp
         }
         for (var repo : repos) {
             if (repo.url() != null && GitRemoteUtils.urlsMatch(repo.url(), remoteUrl)) {
-                return new OrcaCheckout(repo.path(), OrcaRecipe.guestCloneUrl(remoteUrl), true);
+                return new OrcaCheckout(repo.path(), cloneUrlIfAny(remoteUrl), true);
             }
         }
         var cloneUrl = OrcaRecipe.guestCloneUrl(remoteUrl);
@@ -53,6 +54,16 @@ public record OrcaCheckout(String projectRoot, String cloneUrl, boolean fromTemp
         // A template repository of the same name from another remote (a fork's upstream) keeps its path
         for (int i = 2; taken.contains(root); i++) root = OrcaRecipe.HOME + "/" + name + "-" + i;
         return new OrcaCheckout(root, cloneUrl, false);
+    }
+
+    /** Where the instance would clone {@code remoteUrl} from, or null when it is none or cannot be cloned there. */
+    private static String cloneUrlIfAny(String remoteUrl) {
+        if (remoteUrl == null) return null;
+        try {
+            return OrcaRecipe.guestCloneUrl(remoteUrl);
+        } catch (OrcaRecipe.RecipeException e) {
+            return null;
+        }
     }
 
     /** {@code path} in the instance: {@code ~/} is agentuser's home, and anything else must be absolute. */

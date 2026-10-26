@@ -181,11 +181,13 @@ public final class IncusOrcaBackend implements OrcaBackend {
             var process = new ProcessBuilder(command).redirectErrorStream(false)
                     .redirectError(ProcessBuilder.Redirect.DISCARD).start();
             process.getOutputStream().close();
-            var output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            // Waited for before reading, so a git that hangs times out: a remote's name or URL is far
+            // smaller than the pipe, so the wait cannot block on a full one.
             if (!process.waitFor(GIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
                 return null;
             }
+            var output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
             return process.exitValue() == 0 ? output.strip() : null;
         } catch (IOException e) {
             return null;

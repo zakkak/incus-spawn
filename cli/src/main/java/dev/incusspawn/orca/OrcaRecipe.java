@@ -149,8 +149,9 @@ public final class OrcaRecipe {
     /**
      * The URL the instance clones {@code url} from: HTTPS, which the isx proxy signs in to, with
      * no user or password. An SSH or {@code git://} remote becomes the same path over HTTPS, since
-     * the instance holds no SSH key; a local path, {@code file://} or a remote helper is refused,
-     * as nothing on this host is the instance's to read.
+     * the instance holds no SSH key. Plain HTTP is refused, as its checkout would arrive with no
+     * integrity; so are a local path, {@code file://} and a remote helper, as nothing on this host
+     * is the instance's to read.
      */
     public static String guestCloneUrl(String url) {
         if (url == null || url.isBlank()) throw new RecipeException("no repository URL to clone.");
@@ -177,12 +178,11 @@ public final class OrcaRecipe {
         }
         var protocol = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
         return switch (protocol) {
-            // Over HTTP(S) the port is the web server's, which the clone keeps
-            case "https", "http" -> {
+            // Over HTTPS the port is the web server's, which the clone keeps
+            case "https" -> {
                 if (uri.getRawPath() == null) throw notClonable(url);
                 var host = uri.getHost() == null ? null : uri.getHost() + (uri.getPort() < 0 ? "" : ":" + uri.getPort());
-                yield protocol.equals("http") ? "http://" + https(host, uri.getRawPath(), url).substring(8)
-                        : https(host, uri.getRawPath(), url);
+                yield https(host, uri.getRawPath(), url);
             }
             // An SSH port is the SSH server's, which says nothing of where HTTPS listens
             case "ssh", "git", "git+ssh", "ssh+git" -> {
@@ -206,9 +206,18 @@ public final class OrcaRecipe {
                 + " or give --project-root.");
     }
 
-    /** {@code url} without a user or password, for a message: a token in a remote URL must not reach Orca's log. */
+    /**
+     * {@code url} without a user or password, for a message: a token in a remote URL must not reach
+     * Orca's log. Everything up to the authority's last {@code @} goes, as a password may hold one.
+     */
     static String stripUserInfo(String url) {
-        return url == null ? "" : url.replaceFirst("^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/@]*@", "$1");
+        if (url == null) return "";
+        var scheme = url.indexOf("://");
+        if (scheme < 0) return url;
+        var start = scheme + 3;
+        var end = url.indexOf('/', start);
+        var at = url.lastIndexOf('@', end < 0 ? url.length() - 1 : end - 1);
+        return at < start ? url : url.substring(0, start) + url.substring(at + 1);
     }
 
     /** How Orca reaches the instance: the isx Host alias, its key, and the exec tunnel the alias uses. */
@@ -252,8 +261,11 @@ public final class OrcaRecipe {
     /**
      * What a lifecycle payload names: the instance, the runtime it must be stamped for, and what
      * {@code resume} prints back.
+     *
+     * @param target the target the result carried, which a provisioned root must keep
      */
-    public record Lifecycle(String mode, String instance, String runtimeId, String projectRoot, int schemaVersion) {}
+    public record Lifecycle(String mode, String instance, String runtimeId, String projectRoot, int schemaVersion,
+                            Target target) {}
 
     /**
      * The payload Orca writes to {@code suspend}, {@code resume} and {@code destroy} on stdin,
@@ -286,9 +298,14 @@ public final class OrcaRecipe {
         var runtimeId = payload.pathText("instanceId", "");
         if (runtimeId.isEmpty()) runtimeId = userData.pathText("runtimeId", "");
         if (runtimeId.isEmpty()) throw new RecipeException("the payload names no Orca runtime.");
-        var projectRoot = result.path("connection").pathText("projectRoot", "");
-        return new Lifecycle(mode, instance, runtimeId, projectRoot,
-                result.pathInt("schemaVersion", SCHEMA_WORKTREE));
+        var schemaVersion = result.pathInt("schemaVersion", 0);
+        if (schemaVersion != SCHEMA_WORKTREE && schemaVersion != SCHEMA_PROVISIONED_ROOT) {
+            throw new RecipeException("the payload's recipe result has a schema this isx does not write.");
+        }
+        var connection = result.path("connection");
+        var target = connection.path("target");
+        return new Lifecycle(mode, instance, runtimeId, connection.pathText("projectRoot", ""), schemaVersion,
+                new Target(instance, target.pathText("identityFile", ""), target.pathText("proxyCommand", "")));
     }
 
     /** {@code ref} if Git could take it as a ref name on a command line, else null. */

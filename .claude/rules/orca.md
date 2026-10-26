@@ -29,6 +29,7 @@ Layout:
 
 Rules:
 - Stdout is the protocol: `OrcaCommand` installs `StdioGuard` first, and writes only the result to `guard.protocolOut`.
-- Every refusal runs before the copy (preflight, the source's `sshd`, a remote the instance can clone); after it, a failure deletes the branch by the stamp check.
+- Every refusal runs before the copy (preflight, the source's `sshd`, a remote the instance can clone); after it, a failure, an unwritable result or the process exiting (Orca cancelling) deletes the branch, matched by this run's `orca-create` stamp, never by the runtime alone.
 - Lifecycle commands act only on an instance whose `orca-runtime` stamp equals the payload's runtime; `destroy` of a missing instance succeeds.
-- The instance clones over HTTPS only (`OrcaRecipe.guestCloneUrl`): never a local path, `file://` or a remote helper, and never with user info from the host's remote.
+- The instance clones over HTTPS only (`OrcaRecipe.guestCloneUrl`): never plain HTTP, a local path, `file://` or a remote helper, and never with user info from the host's remote.
+- `resume` echoes a provisioned root's target from the payload: Orca refuses a resumed root whose SSH fields changed.

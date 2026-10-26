@@ -71,7 +71,13 @@ public class SshProxyCommand extends BaseCommand {
      * Refuse an instance that is not running, unless {@code --start} asks to start it. That is the
      * ProxyCommand {@code isx orca} gives Orca, which reconnects to a workspace it believes is
      * awake: one stopped meanwhile (a host restart, isx stopping it) comes back as {@code isx shell}
-     * would bring it back. A connection that finds another isx process starting it waits for that.
+     * would bring it back, its credentials and CA included.
+     *
+     * <p>A connection that finds the instance locked by another isx process (another connection
+     * starting it, a stop under way) waits for the lock and then prepares the instance itself,
+     * rather than taking {@code Running} for ready: a start is running before it has delivered the
+     * instance's credentials, and a shell opened meanwhile would keep its placeholders empty. The
+     * preparation finds a running instance ready, so the second connection pays little for it.
      */
     void requireRunning(IncusClient incus) throws InterruptedException {
         var status = status(incus);
@@ -79,22 +85,23 @@ public class SshProxyCommand extends BaseCommand {
         if (!start) {
             throw new IllegalStateException("instance '" + instance + "' is not running (status: " + status + ").");
         }
-        var lock = RuntimeServices.lockManager().tryAcquire(instance, "starting");
-        if (lock.isPresent()) {
-            try (var held = lock.get()) {
-                InstancePrep.prepare(incus, instance, BuildOutput::step);
-            } catch (InstancePrep.Refused e) {
-                throw new IllegalStateException(e.getMessage(), e);
-            }
-            return;
-        }
         var deadline = System.nanoTime() + START_WAIT.toNanos();
-        while (System.nanoTime() < deadline) {
+        while (true) {
+            var lock = RuntimeServices.lockManager().tryAcquire(instance, "starting");
+            if (lock.isPresent()) {
+                try (var held = lock.get()) {
+                    InstancePrep.prepare(incus, instance, BuildOutput::step);
+                } catch (InstancePrep.Refused e) {
+                    throw new IllegalStateException(e.getMessage(), e);
+                }
+                return;
+            }
+            if (System.nanoTime() >= deadline) {
+                throw new IllegalStateException("instance '" + instance + "' stayed locked by another isx process for "
+                        + START_WAIT.toSeconds() + " seconds; try again.");
+            }
             Thread.sleep(250);
-            if ("Running".equalsIgnoreCase(status(incus))) return;
         }
-        throw new IllegalStateException("instance '" + instance + "' did not start within "
-                + START_WAIT.toSeconds() + " seconds, while another isx process was starting it.");
     }
 
     private String status(IncusClient incus) {

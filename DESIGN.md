@@ -3711,6 +3711,11 @@ Orca then dials the target, deploys its own server (`orcad`, with a pinned Node)
   `tpl-minimal` has neither, so the first connect failed with `tar: command not found`, and a resumed workspace with "Could not verify the installed orcad build hash" (found running Orca's own workspace flow against a real Incus).
   The built-in `orca` tool requires `sshd` and installs `tar` and `gawk`; `node-pty` needs no compiler, since `orcad` ships prebuilt slots for glibc.
   `create` refuses a source without SSH and only warns about a missing `orca` tool, since a template may install the two packages itself.
+- *Orca's ProxyCommand starts a stopped instance.*
+  Orca records a runtime as running until it suspends it, and reconnects to it on its own; an instance stopped outside Orca (a host restart, isx stopping it) made `isx ssh-proxy` refuse every attempt.
+  The result's `proxyCommand` is `isx ssh-proxy --start <name>`, which starts it as `isx shell` would (`InstancePrep.prepare`, under the instance's `starting` lock; a second connection that finds the lock taken waits up to two minutes for `Running`).
+  The Host block a plain `ssh` uses keeps refusing, so `ssh <name>` never starts anything.
+  `ssh-proxy` installs `StdioGuard`, since its stdout is the SSH stream and a start prints progress.
 - *Names are stable per runtime.*
   The instance is `orca-<workspace slug>-<6 hex of sha256(runtime id)>`: two workspaces of one name differ, and a create Orca repeats for one runtime asks for the name it already has, which preflight refuses rather than making a second instance.
 - *Agents get their credentials as in any isx shell.*

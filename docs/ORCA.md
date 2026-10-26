@@ -91,6 +91,8 @@ Orca runs these commands when a workspace sleeps, wakes or is deleted, with a JS
 | `isx orca resume` | Starts the instance, and prints the connection again |
 | `isx orca destroy` | Deletes the instance; one already gone is success |
 
+An instance that stops while Orca still counts its workspace as awake, as after a restart of your computer, starts again when Orca reconnects.
+
 `isx orca create` stamps the instance with Orca's id for the workspace.
 The other three act only on an instance carrying the id their payload names, so a payload cannot stop or delete an instance Orca did not get from isx.
 A branch you make of such an instance does not carry the stamp.

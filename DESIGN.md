@@ -3673,6 +3673,44 @@ The pieces, and why each is the way it is:
 The tool contract is the stdio one, unchanged: the same tools, approved templates, `mcp.yaml` limits and audit log, the session's host-side stamps (`mcp-cwd`, `mcp-client-pid`) simply absent.
 Out of scope: gating outward actions such as pushes at the proxy (the complement to this), and reaching Incus on another host.
 
+### Orca environment recipes: an instance per workspace
+
+[Orca](https://github.com/stablyai/orca) orchestrates coding agents, one Git worktree each, and can run a workspace on a disposable machine through *environment recipes* (its "Cloud VM" feature, `src/shared/ephemeral-vm-recipes.ts` there).
+A recipe is four host commands in the repository's `orca.yaml`: `create` reads `ORCA_*` variables and prints one JSON object naming an SSH target and a `projectRoot`; `suspend`, `resume` and `destroy` get a lifecycle payload (that result, plus Orca's runtime id) on stdin, and `resume` prints a result again.
+Orca then dials the target, deploys its own server (`orcad`, with a pinned Node) into `~/.orca-remote`, and runs its terminals, Git and agents there.
+`isx orca create|suspend|resume|destroy` (`OrcaCommand`, `cli/.../orca/`) implements that contract, so a recipe is four one-line commands.
+
+- *Recipes, not an Orca provider.*
+  Orca's execution hosts are a closed union (`local | ssh | runtime`) with no plugin seam; recipes are its documented extension point and need no Orca change.
+  A user-level Orca plugin can also contribute recipes, but plugins install from a git marketplace whose entries name a repository root, so it would need a repository of its own; `orca.yaml` is the documented path for now.
+- *isx commands, not shell scripts.*
+  A recipe written as scripts would need `start` and `stop`, which the CLI does not have, JSON handling on macOS and Linux alike, and the discipline to keep stdout clean while `BranchFlow` prints progress.
+  `StdioGuard` (shared with `isx mcp`) hands fd 1 to the result and points `System.out` at stderr, which Orca shows while it creates the workspace.
+- *The target spells out what the Host block holds.*
+  Orca stores a recipe's target as a `source: manual` SSH target, and for those it passes `port`, `identityFile`, `IdentitiesOnly` and `ProxyCommand` to `ssh` itself instead of resolving the alias (`appendSshTargetDestinationArgs` there).
+  So the result carries the managed key and `"<isx>" ssh-proxy <name>` (`SshKeyManager.proxyCommand`, the same string the Host block writes).
+  A `proxyCommand` also makes Orca use the system `ssh` rather than its `ssh2` library, which on macOS could not reach the instance's address at all.
+  The destination is still `agentuser@<name>`, so ssh applies the instance's Host block for what the target cannot say: `StrictHostKeyChecking no` and `UserKnownHostsFile /dev/null`, since every branch of a template shares its host keys.
+  Orca's own check accepts an unknown key on first contact for recipe-owned targets anyway (`hostKeyPolicyForOwner`).
+- *The checkout comes from the remote, never the host's object store.*
+  In Orca's default mode it adds its worktree under `projectRoot` itself and sends no repository URL, so `create` reads the host checkout's `origin` (else its only remote) with `git remote get-url`.
+  A template repository with the same normalized URL (`GitRemoteUtils.urlsMatch`) is used where it is and fetched, which makes a workspace cost a CoW branch and a fetch; any other is cloned at `~/<name>`, or `~/<name>-2` when a template repository of another remote holds that path (a fork beside its upstream).
+  The clone goes over HTTPS through the proxy, which signs in to GitHub: SSH and `git://` remotes become the same path over HTTPS, user info is dropped, and a local path, `file://` or a remote helper is refused (`OrcaRecipe.guestCloneUrl`).
+  For `checkoutMode: provisioned-root` (schema 2) Orca pins `ORCA_REPO_URL`, `ORCA_REPO_REF`, `ORCA_REPO_REF_HEAD` and `ORCA_REPO_BRANCH`, and the script checks out the branch at exactly that commit; a ref that would read as an option is refused before anything exists.
+  The script runs as agentuser in a login shell, so Git sees the proxy environment and the GitHub credential helper, with `GIT_TERMINAL_PROMPT=0` so a remote that wants a password fails instead of hanging.
+- *Who may stop or delete: the runtime stamp.*
+  `create` stamps `user.incus-spawn.orca-runtime` with `ORCA_VM_INSTANCE_ID` on the copy request itself, and the lifecycle commands act only when the stamp matches the payload's runtime id (Orca's `instanceId`, else the `userData.runtimeId` the result carried).
+  The payload comes from Orca's state on this host, but without the check a payload naming any instance (`userData.resourceId`) would stop or delete it.
+  Like the MCP stamps, it is an ownership key (`Metadata.isOwnershipKey`): no copy inherits it, from the copy request on, so a user's branch of an Orca instance is the user's.
+  `destroy` treats a missing instance as success, since Orca retries a destroy that failed, and deletes under the `deleting` mark only while the stamp still matches (`InstanceDestroyer.deleteHeldIf`).
+- *A failed create deletes its branch.*
+  Orca runs `destroy` only for a result it parsed, so an instance left by a `create` that failed after the copy (a clone refused, a start that failed) would be orphaned.
+  `OrcaRuntime.create` runs every refusal it can before the copy (preflight, `sshd` in the source's build, a remote it can clone), and deletes the branch, by the same stamp check, on any failure after it.
+- *Names are stable per runtime.*
+  The instance is `orca-<workspace slug>-<6 hex of sha256(runtime id)>`: two workspaces of one name differ, and a create Orca repeats for one runtime asks for the name it already has, which preflight refuses rather than making a second instance.
+- *Agents get their credentials as in any isx shell.*
+  Orca's daemon starts zsh as a login shell and bash through a wrapper rcfile that sources `/etc/profile` and the user's profile first (`daemon-bash-shell-ready-rcfile.ts` there), so agents launched in its terminals read `/etc/profile.d`, which delivers the instance's proofs; the proxy then signs them in.
+
 ### Native image CPU baseline
 
 Both binaries are built with `-march=haswell` on x86_64 and `-march=armv8.1-a+aes` on aarch64 (Linux arm64, Apple Silicon), set by arch-gated Maven profiles in `proxy/pom.xml` and `cli/pom.xml` — a `-march` value for the other architecture is a hard build failure.

@@ -195,7 +195,7 @@ public final class SshKeyManager {
             if (hostname != null && !hostname.isEmpty()) {
                 blocks.add("    Hostname " + hostname);
             }
-            blocks.add("    ProxyCommand \"" + isxPath + "\" ssh-proxy " + instanceName);
+            blocks.add("    ProxyCommand " + proxyCommand(isxPath, instanceName));
             blocks.add("    User agentuser");
             blocks.add("    IdentityFile ~/.config/incus-spawn/ssh/id_ed25519");
             blocks.add("    IdentitiesOnly yes");
@@ -316,6 +316,19 @@ public final class SshKeyManager {
     /** @param hostLine a stripped line starting with {@code "Host "} */
     private static boolean isHostFor(String hostLine, String instanceName) {
         return hostLine.substring(5).strip().equals(instanceName);
+    }
+
+    /**
+     * The ProxyCommand that reaches the instance's sshd through the Incus exec API, as its Host
+     * block runs it: for a client that is handed the connection rather than the alias, such as
+     * Orca's recipe targets.
+     */
+    public static String proxyCommand(String instanceName) {
+        return proxyCommand(resolveIsxPath(), instanceName);
+    }
+
+    static String proxyCommand(String isxPath, String instanceName) {
+        return "\"" + isxPath + "\" ssh-proxy " + instanceName;
     }
 
     private static String resolveIsxPath() {

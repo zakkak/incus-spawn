@@ -570,6 +570,26 @@ See [Delegating from an agent on your host](MCP.md#delegating-from-an-agent-on-y
 `isx mcp --caller-instance <name>` serves an instance branched with `--mcp-client` instead.
 The proxy runs it for each connection that instance makes to `https://mcp.isx.internal/mcp`, as [a coordinator in an instance](MCP.md#a-coordinator-in-an-instance).
 
+## `isx orca`
+
+The commands of an [Orca](ORCA.md) environment recipe, which give each Orca workspace an isx instance.
+Orca runs them, not you: name them in the repository's `orca.yaml`.
+
+```shell
+isx orca create --from <template> [options]
+isx orca suspend | resume | destroy
+```
+
+| Subcommand | What it does |
+|------------|--------------|
+| `create` | Branch an instance for the workspace, prepare its checkout and print the SSH connection Orca opens |
+| `suspend` | Stop the instance the payload on stdin names |
+| `resume` | Start the instance the payload on stdin names, and print its connection again |
+| `destroy` | Delete the instance the payload on stdin names |
+
+`create` takes `--from`, `--project-root`, `--account`, `--proxy-only`, `--cpu`, `--memory` and `--disk`: see [Options](ORCA.md#options).
+Stdout holds only the JSON object Orca reads, and progress goes to stderr.
+
 ## `isx completion`
 
 Print a shell completion script.

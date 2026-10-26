@@ -143,6 +143,15 @@ public final class Metadata {
     public static final String DISK_REFERENCED = PREFIX + "disk-referenced";
 
     /**
+     * The Orca runtime an instance was created for ({@code isx orca create}): the
+     * {@code ORCA_VM_INSTANCE_ID} Orca gave the recipe. {@code isx orca suspend}, {@code resume}
+     * and {@code destroy} act only on an instance whose stamp matches the runtime in their payload,
+     * so a payload cannot name an instance Orca did not get from isx. Never inherited, as the MCP
+     * stamps are not ({@link #isOwnershipKey}).
+     */
+    public static final String ORCA_RUNTIME = PREFIX + "orca-runtime";
+
+    /**
      * MCP ownership (see {@code isx mcp}). An instance belongs to the host user in
      * {@link #MCP_OWNER}, and is held by one session at a time: {@link #MCP_SESSION} is
      * {@code <pid>-<processStartMillis>} of the {@code isx mcp} process holding it, which tells
@@ -283,6 +292,14 @@ public final class Metadata {
 
     public static boolean isMcpKey(String key) {
         return key.startsWith(MCP_PREFIX);
+    }
+
+    /**
+     * Whether the key says who made the instance and may act on it ({@code isx mcp},
+     * {@code isx orca}): a copy belongs to whoever made the copy, so it never inherits one.
+     */
+    public static boolean isOwnershipKey(String key) {
+        return isMcpKey(key) || ORCA_RUNTIME.equals(key);
     }
 
     /**

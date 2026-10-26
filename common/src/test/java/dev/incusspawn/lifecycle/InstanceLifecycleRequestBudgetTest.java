@@ -622,6 +622,15 @@ class InstanceLifecycleRequestBudgetTest {
     }
 
     @Test
+    void aBranchOfAnOrcaInstanceIsNotOrcas() {
+        // isx orca destroy deletes what carries its runtime's stamp, so a copy must not carry it
+        var daemon = new FakeIncusDaemon().container(NAME, Map.of(Metadata.ORCA_RUNTIME, "orca-1234"));
+        InstanceLifecycle.configureBranch(daemon.client(), NAME, branch(NetworkMode.FULL, Map.of()));
+        assertEquals(List.of("PATCH /1.0/instances/" + NAME), writes(daemon));
+        assertFalse(daemon.instance(NAME).path("config").has(Metadata.ORCA_RUNTIME));
+    }
+
+    @Test
     void noCopyOfACoordinatorMayCallIsxMcp() {
         // #915: only `isx branch --mcp-client` grants it, on the branch it makes; a copy of a
         // coordinator, an agent's fork included, is an ordinary instance.

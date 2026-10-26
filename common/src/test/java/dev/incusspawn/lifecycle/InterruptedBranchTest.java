@@ -64,6 +64,25 @@ class InterruptedBranchTest {
     }
 
     @Test
+    void aCopyNeverCarriesItsSourcesOrcaRuntimeEvenBeforeItIsConfigured() {
+        // isx orca destroy deletes what carries its runtime's stamp: a user's branch of an Orca
+        // instance is the user's, from the copy on
+        var daemon = new FakeIncusDaemon()
+                .container("orca-ws-abc123", Map.of(Metadata.TYPE, Metadata.TYPE_CLONE,
+                        Metadata.ORCA_RUNTIME, "orca-1234"))
+                .refuseWritesContaining("limits.memory");
+        var request = new BranchFlow.Request("orca-ws-abc123", "dev-1", false, false, NetworkMode.AIRGAP,
+                null, null, null, null, List.of(), false, Map.of());
+
+        assertThrows(RuntimeException.class,
+                () -> BranchFlow.create(daemon.client(), BranchFlow.preflight(daemon.client(), request, Map.of())));
+
+        var config = daemon.instance("dev-1").path("config");
+        assertFalse(config.has(Metadata.ORCA_RUNTIME), config.toString());
+        assertEquals("orca-1234", daemon.instance("orca-ws-abc123").path("config").path(Metadata.ORCA_RUNTIME).asText());
+    }
+
+    @Test
     void aBranchOfAFailedBuildIsUntrustedFromItsCopyEvenIfTheBuildPredatesTheStamp() {
         // #936: a failed build promoted by an older isx carries no taint, and its copy request is the
         // one moment a branch of it must get one, before anything could give it a secret

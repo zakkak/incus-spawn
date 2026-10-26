@@ -420,6 +420,7 @@ Shell completions are available for bash, zsh and fish via `isx completion <shel
 | [`isx vm`](docs/CLI.md#isx-vm) | Manage the VM appliance (macOS only) |
 | [`isx ask`](docs/CLI.md#isx-ask) | AI-powered help |
 | [`isx mcp`](docs/CLI.md#isx-mcp) | Serve isx to a local agent over MCP |
+| [`isx orca`](docs/CLI.md#isx-orca) | Give each Orca workspace an isx instance |
 | [`isx completion`](docs/CLI.md#isx-completion) | Print shell completion script |
 
 Use `isx <command> --help` for detailed options on any command.
@@ -427,6 +428,7 @@ Scripts read `--format=plain` or `--format=json`, which stay stable: see [Script
 
 ## Further reading
 
+- [Running Orca's agents in isx](docs/ORCA.md): an isx instance for each workspace of the Orca agent orchestrator.
 - [FAQ](docs/FAQ.md): URL clicks in Codex, the clipboard, and why there is no read-write project mount.
 - [Compared with other sandboxes](docs/SANDBOXES.md): why an isx instance is a whole machine, and where nono, Claude Code's sandbox runtime, NVIDIA OpenShell, dev containers, Docker Sandboxes and a VM you manage sit beside it.
 - [What differs from a stock Fedora install](docs/FEDORA.md): the few deliberate deviations, mostly so that every runtime trusts the proxy's CA.

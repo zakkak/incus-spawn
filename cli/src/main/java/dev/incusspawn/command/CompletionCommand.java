@@ -405,6 +405,28 @@ public class CompletionCommand extends BaseCommand {
               esac
             }
 
+            _isx_orca() {
+              local -a _orca_subcmds
+              _orca_subcmds=(
+                'create:branch an instance for an Orca workspace'
+                'suspend:stop the instance of the Orca runtime on stdin'
+                'resume:start the instance of the Orca runtime on stdin'
+                'destroy:delete the instance of the Orca runtime on stdin'
+              )
+              case $words[1] in
+                create) _arguments \\
+                  '--from=[Template or instance to branch]:source:_isx_instances' \\
+                  '--project-root=[Checkout in the instance Orca opens]:path' \\
+                  '*--account=[Credential account as <namespace>=<account>]:selection:_isx_accounts' \\
+                  '--proxy-only[Restrict network to the host proxy only]' \\
+                  '--cpu=[CPU core limit]:cpus' \\
+                  '--memory=[Memory limit]:memory' \\
+                  '--disk=[Disk size limit]:disk' ;;
+                suspend|resume|destroy) ;;
+                *) _describe -t subcmds 'orca subcommand' _orca_subcmds ;;
+              esac
+            }
+
             _isx_tools() {
               local state line; typeset -A opt_args
               _arguments -C \\
@@ -459,6 +481,7 @@ public class CompletionCommand extends BaseCommand {
                     'tools:list and inspect available tool definitions'
                     'account:add credentials, and show or change the accounts an instance uses'
                     'mcp:serve isx to a local AI agent over MCP (stdio)'
+                    'orca:run Orca agents in sandboxed instances (environment recipe commands)'
                     'vm:manage the incus-spawn VM appliance'
                     'update-base:check for and install base image updates'
                     'doctor:run health checks and offer to fix problems'
@@ -485,6 +508,7 @@ public class CompletionCommand extends BaseCommand {
                     templates)  _isx_templates ;;
                     tools)      _isx_tools ;;
                     account)    _isx_account ;;
+                    orca)       _isx_orca ;;
                     vm)         _isx_vm ;;
                     update-base) _isx_update_base ;;
                   esac ;;
@@ -542,14 +566,14 @@ public class CompletionCommand extends BaseCommand {
               # complete values in both the --opt value and the --opt=value forms.
               _init_completion -s || return
 
-              local commands="init build clean project branch shell run list destroy reset update-all update-base proxy templates account mcp tools vm doctor help"
+              local commands="init build clean project branch shell run list destroy reset update-all update-base proxy templates account mcp orca tools vm doctor help"
 
               # Determine which subcommand is active
               local cmd=""
               local i
               for (( i=1; i < cword; i++ )); do
                 case "${words[i]}" in
-                  init|build|clean|project|branch|shell|run|list|destroy|reset|update-all|update-base|proxy|templates|account|mcp|tools|vm|doctor|help)
+                  init|build|clean|project|branch|shell|run|list|destroy|reset|update-all|update-base|proxy|templates|account|mcp|orca|tools|vm|doctor|help)
                     cmd="${words[i]}"
                     break ;;
                 esac
@@ -648,6 +672,30 @@ public class CompletionCommand extends BaseCommand {
                     --action) return ;;
                   esac
                   COMPREPLY=( $(compgen -W "--help --action" -- "$cur") )
+                  ;;
+                orca)
+                  local orca_cmd=""
+                  local j
+                  for (( j=i+1; j < cword; j++ )); do
+                    case "${words[j]}" in
+                      create|suspend|resume|destroy) orca_cmd="${words[j]}"; break ;;
+                    esac
+                  done
+                  case "$orca_cmd" in
+                    "") COMPREPLY=( $(compgen -W "create suspend resume destroy --help" -- "$cur") ) ;;
+                    create)
+                      case "$prev" in
+                        --from)
+                          COMPREPLY=( $(compgen -W "$(_isx_list_instances)" -- "$cur") )
+                          return ;;
+                        --project-root|--cpu|--memory|--disk) return ;;
+                        --account)
+                          _isx_complete_accounts
+                          return ;;
+                      esac
+                      COMPREPLY=( $(compgen -W "--help --from --project-root --account --proxy-only --cpu --memory --disk" -- "$cur") ) ;;
+                    *) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
+                  esac
                   ;;
                 account)
                   local acct_cmd=""
@@ -849,7 +897,7 @@ public class CompletionCommand extends BaseCommand {
 
             # Helper: true when no subcommand has been typed yet
             function __isx_no_subcommand
-              not string match -qr -- '^(init|build|clean|project|branch|shell|run|list|destroy|reset|update-all|update-base|proxy|templates|account|mcp|tools|vm|doctor|help)$' (commandline -opc)[2..-1]
+              not string match -qr -- '^(init|build|clean|project|branch|shell|run|list|destroy|reset|update-all|update-base|proxy|templates|account|mcp|orca|tools|vm|doctor|help)$' (commandline -opc)[2..-1]
             end
 
             # Helper: true when a specific subcommand is active
@@ -874,6 +922,7 @@ public class CompletionCommand extends BaseCommand {
             complete -c isx -f -n __isx_no_subcommand -a templates    -d 'Manage template definitions'
             complete -c isx -f -n __isx_no_subcommand -a tools        -d 'List and inspect available tool definitions'
             complete -c isx -f -n __isx_no_subcommand -a mcp          -d 'Serve isx to a local AI agent over MCP (stdio)'
+            complete -c isx -f -n __isx_no_subcommand -a orca         -d 'Run Orca agents in sandboxed instances (environment recipe commands)'
             complete -c isx -f -n __isx_no_subcommand -a vm              -d 'Manage the incus-spawn VM appliance'
             complete -c isx -f -n __isx_no_subcommand -a update-base     -d 'Check for and install base image updates'
             complete -c isx -f -n __isx_no_subcommand -a doctor          -d 'Run health checks and offer to fix problems'
@@ -970,6 +1019,19 @@ public class CompletionCommand extends BaseCommand {
             complete -c isx -f -n '__isx_using_subcommand templates; and __isx_using_subcommand list' -s v -l verbose -d 'Show source and description'
             complete -c isx -f -n '__isx_using_subcommand templates; and __isx_using_subcommand edit' -a '(__isx_templates)' -d 'Template name'
             complete -c isx -f -n '__isx_using_subcommand templates; and __isx_using_subcommand new' -l project -d 'Create in project-local directory'
+
+            # ── orca ────────────────────────────────────────────────────────────────────
+            complete -c isx -f -n '__isx_using_subcommand orca; and not string match -qr -- "\\b(create|suspend|resume|destroy)\\b" (commandline -opc)' -a create -d 'Branch an instance for an Orca workspace'
+            complete -c isx -f -n '__isx_using_subcommand orca; and not string match -qr -- "\\b(create|suspend|resume|destroy)\\b" (commandline -opc)' -a suspend -d 'Stop the instance of the Orca runtime on stdin'
+            complete -c isx -f -n '__isx_using_subcommand orca; and not string match -qr -- "\\b(create|suspend|resume|destroy)\\b" (commandline -opc)' -a resume -d 'Start the instance of the Orca runtime on stdin'
+            complete -c isx -f -n '__isx_using_subcommand orca; and not string match -qr -- "\\b(create|suspend|resume|destroy)\\b" (commandline -opc)' -a destroy -d 'Delete the instance of the Orca runtime on stdin'
+            complete -c isx -f -n '__isx_using_subcommand orca; and __isx_using_subcommand create' -l from -d 'Template or instance to branch' -x -a '(__isx_instances)'
+            complete -c isx -f -n '__isx_using_subcommand orca; and __isx_using_subcommand create' -l project-root -d 'Checkout in the instance Orca opens' -x
+            complete -c isx -f -n '__isx_using_subcommand orca; and __isx_using_subcommand create' -l account -d 'Credential account as <namespace>=<account>' -x -a '(__isx_accounts)'
+            complete -c isx -f -n '__isx_using_subcommand orca; and __isx_using_subcommand create' -l proxy-only -d 'Restrict network to the host proxy only'
+            complete -c isx -f -n '__isx_using_subcommand orca; and __isx_using_subcommand create' -l cpu -d 'CPU core limit' -x
+            complete -c isx -f -n '__isx_using_subcommand orca; and __isx_using_subcommand create' -l memory -d 'Memory limit' -x
+            complete -c isx -f -n '__isx_using_subcommand orca; and __isx_using_subcommand create' -l disk -d 'Disk size limit' -x
 
             # ── account ─────────────────────────────────────────────────────────────────
 

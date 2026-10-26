@@ -223,7 +223,7 @@ Each caller routes it: the CLI passes `BuildOutput.bound()` (whoever owns the te
 Pass plain stdout from the TUI only where it has provably released the terminal (e.g. `ShellLaunch.shellInto`, after the runner closes), and say so in a comment.
 **`BuildOutput` is the one output seam** (#1703): its static methods hand every message to the bound `Output` (`common/util`), a `TerminalOutput` unless the owner of the terminal bound another with `BuildOutput.bind`.
 Only owners bind: the TUI binds `Output.diagnosticsTo(warningLog::add)` while it draws or reloads, and `Output.copying(terminal, drawing)` around every action it lends the terminal to.
-`PreTuiOutput` binds `Output.holding`, `isx mcp` binds `TerminalOutput.stderrOnly()` (`StdioGuard`), and the proxy binds its own `ProxyLog`.
+`PreTuiOutput` binds `Output.holding`, `isx mcp` and `isx orca` bind `TerminalOutput.stderrOnly()` (`StdioGuard`), and the proxy binds its own `ProxyLog`.
 An output that is not a terminal drops progress and notes, and still receives every diagnostic: `warnAside`, `stepWarn`, `warnBanner` and `stepFail` default to `warn`.
 Bindings nest, and closing one out of order throws.
 Code with no caller to take a sink from -- e.g. a definition loader built several layers down, as `ToolProxyResolver` builds `ToolDefLoader`s -- reports through `Warnings.warn()` (`common`): to the bound output, on stderr alone on a terminal (`Output.warnAside`, so a query's stdout holds only results), each distinct message once per destination, so a TUI build does not re-log what the log holds (a long-running process that re-reads definitions calls `Warnings.forgetReported()`, as the proxy does on each reload).
@@ -296,6 +296,13 @@ Every start registers the server in that instance's Claude Code, or removes it f
 See `.claude/rules/mcp.md` and DESIGN.md "MCP server".
 Managed delegation selects `claude` or `codex`, exposes installed agents through `list_templates.delegate_agents`, and persists the selected agent with each task.
 See [MCP delegation to Codex workers](docs/dev/MCP-CODEX-DELEGATION.md) for recovery, policy differences, and validation.
+
+**`isx orca` is Orca's environment-recipe contract** (`cli/.../orca/`, docs/ORCA.md, DESIGN.md "Orca environment recipes").
+Orca runs `create` with `ORCA_*` variables and parses one JSON object from stdout; `suspend`, `resume` and `destroy` read a lifecycle payload on stdin.
+Stdout is the protocol, as for `isx mcp`: both install `StdioGuard`.
+The result's shape is Orca's strict schema (`src/shared/ephemeral-vm-recipes.ts` in stablyai/orca): never add a field Orca does not know, since it fails the whole result; isx's own data rides in `userData`.
+`create` stamps `orca-runtime` on the copy request and the lifecycle commands act only on an instance whose stamp matches the payload's runtime; like the MCP stamps it is an ownership key (`Metadata.isOwnershipKey`) no copy inherits.
+Every refusal runs before the copy; after it, a failure deletes the branch, since Orca destroys only what a result named.
 
 **Native image: host paths belong in the run-time-initialized classes.**
 Quarkus initializes application classes at image-build time unless they are listed in `--initialize-at-run-time`, and Linux native builds run as **root inside the GraalVM builder container**.

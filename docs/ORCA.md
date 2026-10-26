@@ -1,0 +1,107 @@
+# Running Orca's agents in isx
+
+[Orca](https://github.com/stablyai/orca) runs several coding agents side by side, each in a workspace of its own, and tracks them in one window.
+With isx, each Orca workspace gets an isx instance of its own, so its agents work on a machine that holds none of your credentials.
+Orca still shows their terminals, diffs and status as it does for any workspace.
+
+Orca's per-workspace environments, which it calls Cloud VM, run commands you name to make and remove a machine for each workspace.
+`isx orca` provides those commands.
+It branches an instance from a template you prepared, and tells Orca how to reach it over SSH.
+
+## Setting it up
+
+Setting it up takes a template with an SSH server and an agent, and four lines in your repository's `orca.yaml`.
+
+1. Define a template with the `sshd` tool and the agent you run in Orca.
+   Listing your repository under `repos` is optional, and makes each workspace start from the template's clone instead of a fresh one.
+
+   ```yaml
+   name: tpl-app
+   parent: tpl-java
+   tools: [sshd, claude]
+   repos:
+     - url: https://github.com/acme/app.git
+       path: ~/app
+   ```
+
+2. Build it with `isx build tpl-app`.
+3. Add a recipe to `orca.yaml` at the root of your repository, on its main branch:
+
+   ```yaml
+   environmentRecipes:
+     - id: isx
+       name: isx sandbox
+       create: isx orca create --from tpl-app
+       suspend: isx orca suspend
+       resume: isx orca resume
+       destroy: isx orca destroy
+   ```
+
+4. In Orca, turn on **Cloud VM** under Settings, Experimental.
+5. Create a workspace and choose **isx sandbox** under **Run on**.
+
+Orca lists a recipe only once `orca.yaml` holding it is on the repository's main branch.
+`orca vm recipe doctor isx --provision` checks the recipe end to end: it creates an instance, reads the result and destroys the instance again.
+
+## What `isx orca create` does
+
+`isx orca create` makes one instance per Orca workspace, ready before Orca connects.
+
+- It branches the template as `isx branch` does, with the template's network mode, accounts and limits.
+  The instance is named `orca-<workspace>-<suffix>`, where the suffix tells apart two workspaces of one name.
+- It prepares the checkout Orca opens, as the next section describes.
+- It prints the SSH connection Orca opens.
+  Orca connects as `agentuser` through `isx ssh-proxy`, which tunnels through Incus, with the key isx manages.
+- When a step fails after the branch exists, it deletes the instance again, since Orca never hears of it.
+
+Orca then installs its own server in the instance over SSH, and runs its terminals and agents there.
+Agents started in Orca's terminals get the instance's login environment, so the isx proxy signs them in to their accounts.
+
+## The checkout
+
+Orca opens one checkout in the instance, and adds a Git worktree there for each workspace.
+`isx orca create` finds or makes that checkout from the remote of your repository's checkout on the host, `origin` or its only remote.
+
+| Case | What `isx orca create` does |
+|------|-----------------------------|
+| The template cloned the same repository | Uses that clone where it is, and fetches it |
+| It did not | Clones the repository at `~/<name>` over HTTPS |
+| You give `--project-root <path>` | Uses that checkout, cloning the repository there if it is missing |
+
+The instance clones over HTTPS, through the isx proxy, which signs in to GitHub with your account.
+An SSH remote such as `git@github.com:acme/app.git` is cloned from the same path over HTTPS, because the instance holds no SSH key.
+A repository with no network remote needs `--project-root`, pointing at a checkout the template made.
+
+Commits you have not pushed are not in the instance, which clones from the remote.
+
+A recipe with `checkoutMode: provisioned-root` also works.
+Orca then sends the branch and the exact commit to start from, and `isx orca create` checks out that branch at that commit itself.
+
+## Suspend, resume and destroy
+
+Orca runs these commands when a workspace sleeps, wakes or is deleted, with a JSON payload on stdin.
+
+| Command | What it does |
+|---------|--------------|
+| `isx orca suspend` | Stops the instance |
+| `isx orca resume` | Starts the instance, and prints the connection again |
+| `isx orca destroy` | Deletes the instance; one already gone is success |
+
+`isx orca create` stamps the instance with Orca's id for the workspace.
+The other three act only on an instance carrying the id their payload names, so a payload cannot stop or delete an instance Orca did not get from isx.
+A branch you make of such an instance does not carry the stamp.
+
+## Options
+
+`isx orca create` takes the options of `isx branch` that suit an instance nobody opens a shell in.
+
+| Option | What it does |
+|--------|--------------|
+| `--from <template>` | The template or instance to branch. Default: the one the checkout's `incus-spawn.yaml` names |
+| `--project-root <path>` | The checkout in the instance Orca opens, absolute or under `~/` |
+| `--account <ns>=<account>` | Use this [credential account](CONFIGURATION.md#credential-accounts); repeatable |
+| `--proxy-only` | Restrict the instance's network to the isx proxy |
+| `--cpu <N>`, `--memory <size>`, `--disk <size>` | Resource limits, with the defaults of `isx branch` |
+
+Stdout holds only the JSON object Orca reads.
+Progress and errors go to stderr, which Orca shows while it creates the workspace.

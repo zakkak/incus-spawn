@@ -43,6 +43,15 @@ Setting it up takes a template with the `orca` tool and an agent, and four lines
 
 Orca lists a recipe only once `orca.yaml` holding it is on the repository's main branch.
 `orca vm recipe doctor isx --provision` checks the recipe end to end: it creates an instance, reads the result and destroys the instance again.
+It runs on your computer and costs nothing.
+
+## Credentials
+
+Nobody logs in inside an Orca workspace's instance.
+The isx proxy adds the agent's account to its requests as they leave, as in any isx instance, and signs in to GitHub for the clone.
+
+If the agent's account is not set up yet, run `isx account add <namespace>`, such as `isx account add claude`, on your computer.
+Running the agent's own login inside the instance would put a credential where isx keeps none.
 
 ## What `isx orca create` does
 
@@ -111,3 +120,27 @@ A branch you make of such an instance does not carry the stamp.
 
 Stdout holds only the JSON object Orca reads.
 Progress and errors go to stderr, which Orca shows while it creates the workspace.
+
+## Checking a workspace
+
+Each workspace's instance is an ordinary isx instance, so the usual commands reach it.
+
+| Command | What it shows |
+|---------|---------------|
+| `isx list` | The instance, named `orca-<workspace>-<suffix>` |
+| `ssh <instance>` | A shell over the same SSH connection Orca uses |
+| `isx shell <instance>` | A shell in the instance |
+| `isx proxy activity` | What the agent sent through the proxy |
+
+## Troubleshooting
+
+Orca shows the output of `isx orca create` while it creates a workspace, and keeps it in the recipe doctor's transcript.
+
+| Message | Fix |
+|---------|-----|
+| `has no SSH server, which Orca connects through` | Add the `orca` tool to the template and rebuild it |
+| `tar: command not found`, or the installed orcad build hash cannot be verified | Add the `orca` tool to the template and rebuild it |
+| `has no remote isx can clone` | Push the repository, list it in the template's `repos`, or give `--project-root` |
+| `the isx proxy is not running` | Run `isx proxy start`, or `isx doctor` for the cause |
+| `no template or instance '<name>' to branch` | Build the template, or correct `--from` |
+| `was not created by isx orca for this Orca runtime` | The payload names an instance isx did not make for it, which isx leaves alone; remove it yourself with `isx destroy` if it is yours |

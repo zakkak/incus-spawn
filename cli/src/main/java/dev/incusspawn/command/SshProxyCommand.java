@@ -1,8 +1,15 @@
 package dev.incusspawn.command;
 
+import dev.incusspawn.RuntimeServices;
+import dev.incusspawn.incus.IncusClient;
+import dev.incusspawn.util.BuildOutput;
+import dev.incusspawn.util.StdioGuard;
 import org.aesh.command.CommandDefinition;
 import org.aesh.command.CommandResult;
 import org.aesh.command.option.Argument;
+import org.aesh.command.option.Option;
+
+import java.time.Duration;
 
 @CommandDefinition(
         name = "ssh-proxy",
@@ -14,17 +21,22 @@ public class SshProxyCommand extends BaseCommand {
     @Argument(description = "Instance name", required = true)
     String instance;
 
+    @Option(name = "start", hasValue = false,
+            description = "Start the instance first if it is stopped, as isx shell does")
+    boolean start;
+
+    /** How long a connection waits for another isx process that is starting the instance. */
+    static final Duration START_WAIT = Duration.ofMinutes(2);
+
     @Override
     protected CommandResult doExecute() throws Exception {
-        var incus = dev.incusspawn.RuntimeServices.incus();
-
-        if (!checkInstanceRunning(incus)) {
-            return CommandResult.valueOf(1);
-        }
-
+        // Stdin and stdout are the SSH connection: nothing isx says while starting may reach them
+        var guard = StdioGuard.install();
+        var incus = RuntimeServices.incus();
+        requireRunning(incus);
         int exitCode = incus.execBidirectional(instance, 0, 0, "/",
                 guestCommand(),
-                System.in, System.out, System.err);
+                guard.protocolIn, guard.protocolOut, guard.protocolErr);
         return CommandResult.valueOf(exitCode);
     }
 
@@ -55,21 +67,46 @@ public class SshProxyCommand extends BaseCommand {
                         + " exec nc localhost 22"};
     }
 
-    private boolean checkInstanceRunning(dev.incusspawn.incus.IncusClient incus) {
-        try {
-            var status = incus.getInstanceStatus(instance);
-            if (status.isEmpty()) {
-                System.err.println("Error: instance '" + instance + "' not found or not accessible.");
-                return false;
-            }
-            if (!"Running".equalsIgnoreCase(status)) {
-                System.err.println("Error: instance '" + instance + "' is not running (status: " + status + ").");
-                return false;
-            }
-            return true;
-        } catch (Exception e) {
-            System.err.println("Error: could not check instance status: " + e.getMessage());
-            return false;
+    /**
+     * Refuse an instance that is not running, unless {@code --start} asks to start it. That is the
+     * ProxyCommand {@code isx orca} gives Orca, which reconnects to a workspace it believes is
+     * awake: one stopped meanwhile (a host restart, isx stopping it) comes back as {@code isx shell}
+     * would bring it back. A connection that finds another isx process starting it waits for that.
+     */
+    void requireRunning(IncusClient incus) throws InterruptedException {
+        var status = status(incus);
+        if ("Running".equalsIgnoreCase(status)) return;
+        if (!start) {
+            throw new IllegalStateException("instance '" + instance + "' is not running (status: " + status + ").");
         }
+        var lock = RuntimeServices.lockManager().tryAcquire(instance, "starting");
+        if (lock.isPresent()) {
+            try (var held = lock.get()) {
+                InstancePrep.prepare(incus, instance, BuildOutput::step);
+            } catch (InstancePrep.Refused e) {
+                throw new IllegalStateException(e.getMessage(), e);
+            }
+            return;
+        }
+        var deadline = System.nanoTime() + START_WAIT.toNanos();
+        while (System.nanoTime() < deadline) {
+            Thread.sleep(250);
+            if ("Running".equalsIgnoreCase(status(incus))) return;
+        }
+        throw new IllegalStateException("instance '" + instance + "' did not start within "
+                + START_WAIT.toSeconds() + " seconds, while another isx process was starting it.");
+    }
+
+    private String status(IncusClient incus) {
+        String status;
+        try {
+            status = incus.getInstanceStatus(instance);
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("could not check instance status: " + e.getMessage(), e);
+        }
+        if (status == null || status.isEmpty()) {
+            throw new IllegalStateException("instance '" + instance + "' not found or not accessible.");
+        }
+        return status;
     }
 }

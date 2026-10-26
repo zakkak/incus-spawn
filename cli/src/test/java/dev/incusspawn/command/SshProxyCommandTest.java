@@ -1,5 +1,6 @@
 package dev.incusspawn.command;
 
+import dev.incusspawn.incus.FakeIncusDaemon;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -8,6 +9,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -134,5 +136,33 @@ class SshProxyCommandTest {
                 .redirectErrorStream(true).start();
         p.getInputStream().readAllBytes();
         return p.waitFor();
+    }
+
+    @Test
+    void aStoppedInstanceIsRefusedWithoutStart() {
+        var cmd = new SshProxyCommand();
+        cmd.instance = "dev";
+        var daemon = new FakeIncusDaemon().container("dev", Map.of());
+        var e = assertThrows(IllegalStateException.class, () -> cmd.requireRunning(daemon.client()));
+        assertEquals("instance 'dev' is not running (status: Stopped).", e.getMessage());
+    }
+
+    @Test
+    void aMissingInstanceIsRefusedWithOrWithoutStart() {
+        var cmd = new SshProxyCommand();
+        cmd.instance = "gone";
+        cmd.start = true;
+        var e = assertThrows(IllegalStateException.class, () -> cmd.requireRunning(new FakeIncusDaemon().client()));
+        assertEquals("instance 'gone' not found or not accessible.", e.getMessage());
+    }
+
+    @Test
+    void aRunningInstanceIsUsedAsItIs() throws Exception {
+        var cmd = new SshProxyCommand();
+        cmd.instance = "dev";
+        cmd.start = true;
+        var daemon = new FakeIncusDaemon().instance("dev", "container", "Running", Map.of());
+        cmd.requireRunning(daemon.client());
+        assertEquals("Running", daemon.instance("dev").path("status").asText());
     }
 }

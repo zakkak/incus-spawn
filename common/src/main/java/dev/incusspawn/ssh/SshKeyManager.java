@@ -321,14 +321,19 @@ public final class SshKeyManager {
     /**
      * The ProxyCommand that reaches the instance's sshd through the Incus exec API, as its Host
      * block runs it: for a client that is handed the connection rather than the alias, such as
-     * Orca's recipe targets.
+     * Orca's recipe targets, which also start a stopped instance.
      */
-    public static String proxyCommand(String instanceName) {
-        return proxyCommand(resolveIsxPath(), instanceName);
+    public static String proxyCommand(String instanceName, boolean startIfStopped) {
+        return proxyCommand(resolveIsxPath(), instanceName, startIfStopped);
     }
 
     static String proxyCommand(String isxPath, String instanceName) {
-        return "\"" + isxPath + "\" ssh-proxy " + instanceName;
+        return proxyCommand(isxPath, instanceName, false);
+    }
+
+    /** @param startIfStopped whether {@code isx ssh-proxy} starts a stopped instance ({@code --start}) */
+    static String proxyCommand(String isxPath, String instanceName, boolean startIfStopped) {
+        return "\"" + isxPath + "\" ssh-proxy " + (startIfStopped ? "--start " : "") + instanceName;
     }
 
     private static String resolveIsxPath() {

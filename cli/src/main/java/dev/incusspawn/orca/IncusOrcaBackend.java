@@ -197,6 +197,7 @@ public final class IncusOrcaBackend implements OrcaBackend {
 
     @Override
     public OrcaRecipe.Target target(String name) {
-        return new OrcaRecipe.Target(name, Environment.sshKeyFile().toString(), SshKeyManager.proxyCommand(name));
+        // Orca reconnects to a workspace it believes is awake, which a host restart may have stopped
+        return new OrcaRecipe.Target(name, Environment.sshKeyFile().toString(), SshKeyManager.proxyCommand(name, true));
     }
 }

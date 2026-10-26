@@ -79,7 +79,7 @@ public class OrcaCommand extends BaseCommand {
     public static class Create extends BaseCommand {
 
         @Option(name = "from", description = "Template (or instance) to branch; default: the one the checkout's"
-                + " incus-spawn.yaml names. It needs the sshd tool.")
+                + " incus-spawn.yaml names. It needs the orca tool.")
         String from;
 
         @Option(name = "project-root", description = "Checkout in the instance Orca opens (default: the template's"
